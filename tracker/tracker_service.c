@@ -81,6 +81,7 @@ int tracker_service_init()
 
     init_connections = g_max_connections < ALLOC_CONNECTIONS_ONCE ?
         g_max_connections : ALLOC_CONNECTIONS_ONCE;
+	//队列初始化，具体干啥用的，待细看
 	if ((result=free_queue_init_ex(g_max_connections, init_connections,
                     ALLOC_CONNECTIONS_ONCE, TRACKER_MAX_PACKAGE_SIZE,
                     TRACKER_MAX_PACKAGE_SIZE, sizeof(TrackerClientInfo))) != 0)

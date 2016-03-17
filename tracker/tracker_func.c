@@ -238,12 +238,17 @@ int tracker_load_from_conf_file(const char *filename, \
 		{
 			snprintf(bind_addr, addr_size, "%s", pBindAddr);
 		}
-
+		//上传组(卷) 的方式 0:轮询方式 1: 指定组 2: 平衡负载(选择最大剩余空间的组(卷)上传)
 		if ((result=tracker_load_store_lookup(filename, \
 			&iniContext)) != 0)
 		{
 			break;
 		}
+		//选择哪个storage server 进行上传操作(一个文件被上传后，
+		//这个storage server就相当于这个文件的storage server源，会对同组的storage server推送这个文件达到同步效果)
+		// 0: 轮询方式 
+		// 1: 根据ip 地址进行排序选择第一个服务器（IP地址最小者）
+		// 2: 根据优先级进行排序（上传优先级由storage server来设置，参数名为upload_priority）
 
 		g_groups.store_server = (byte)iniGetIntValue(NULL, \
 				"store_server",  &iniContext, \
@@ -260,7 +265,10 @@ int tracker_load_from_conf_file(const char *filename, \
 
 			g_groups.store_server = FDFS_STORE_SERVER_ROUND_ROBIN;
 		}
-
+		// 选择哪个 storage server 作为下载服务器
+		// 0: 轮询方式，可以下载当前文件的任一storage server
+		// 1: 哪个为源storage server 就用哪一个 (前面说过了这个storage server源
+		//是怎样产生的) 就是之前上传到哪个storage server服务器就是哪个了
 		g_groups.download_server = (byte)iniGetIntValue(NULL, \
 			"download_server", &iniContext, \
 			FDFS_DOWNLOAD_SERVER_ROUND_ROBIN);
@@ -290,7 +298,10 @@ int tracker_load_from_conf_file(const char *filename, \
 				FDFS_STORE_PATH_ROUND_ROBIN);
 			g_groups.store_path = FDFS_STORE_PATH_ROUND_ROBIN;
 		}
-
+		//storage server 上保留的空间，保证系统或其他应用需求空间。
+		//可以用绝对值或者百分比（V4开始支持百分比方式）。
+		//(指出 如果同组的服务器的硬盘大小一样,以最小的为准,
+		//也就是只要同组中有一台服务器达到这个标准了,这个标准就生效,原因就是因为他们进行备份)
 		if ((result=fdfs_parse_storage_reserved_space(&iniContext, \
 				&g_storage_reserved_space)) != 0)
 		{
@@ -325,7 +336,7 @@ int tracker_load_from_conf_file(const char *filename, \
 			result = EINVAL;
                         break;
 		}
-
+		//对资源进行限制-->一个进程能打开的最大文件数
 		if ((result=set_rlimit(RLIMIT_NOFILE, g_max_connections)) != 0)
 		{
 			break;
@@ -349,8 +360,8 @@ int tracker_load_from_conf_file(const char *filename, \
 		else
 		{
 			struct group *pGroup;
-
-     			pGroup = getgrnam(g_run_by_group);
+			//逐一搜索参数指定的组名称
+     		pGroup = getgrnam(g_run_by_group);
 			if (pGroup == NULL)
 			{
 				result = errno != 0 ? errno : ENOENT;
@@ -395,13 +406,14 @@ int tracker_load_from_conf_file(const char *filename, \
 
 			g_run_by_uid = pUser->pw_uid;
 		}
-
+		//可以连接到此 tracker server 的ip范围
+		//（对所有类型的连接都有影响，包括客户端，storage server）
 		if ((result=load_allow_hosts(&iniContext, \
                 	 &g_allow_ip_addrs, &g_allow_ip_count)) != 0)
 		{
 			return result;
 		}
-
+		//同步或刷新日志信息到硬盘的时间间隔，单位为秒
 		g_sync_log_buff_interval = iniGetIntValue(NULL, \
 				"sync_log_buff_interval", &iniContext, \
 				SYNC_LOG_BUFF_DEF_INTERVAL);
@@ -409,7 +421,13 @@ int tracker_load_from_conf_file(const char *filename, \
 		{
 			g_sync_log_buff_interval = SYNC_LOG_BUFF_DEF_INTERVAL;
 		}
-
+		/* 检测 storage server 存活的时间隔，单位为秒。
+		 * storage server定期向tracker server 发心跳，
+		 * 如果tracker server在一个check_active_interval内还没有收到
+		 * storage server的一次心跳，那边将认为该storage server已经下线。
+		 * 所以本参数值必须大于storage server配置的心跳时间间隔。
+		 * 通常配置为storage server心跳时间间隔的2倍或3倍。
+		 */
 		g_check_active_interval = iniGetIntValue(NULL, \
 				"check_active_interval", &iniContext, \
 				CHECK_ACTIVE_DEF_INTERVAL);
@@ -581,7 +599,8 @@ int tracker_load_from_conf_file(const char *filename, \
 		{
 			break;
 		}
-
+		// error log按大小轮转
+		// 设置为0表示不按文件大小轮转，否则当error log达到该大小，就会轮转到新文件中
 		pRotateErrorLogSize = iniGetStrValue(NULL, \
 			"rotate_error_log_size", &iniContext);
 		if (pRotateErrorLogSize == NULL)
@@ -763,6 +782,7 @@ int tracker_load_from_conf_file(const char *filename, \
 
 	iniFreeContext(&iniContext);
 
+	//处理if_alias_prefix的配置，作用未知，功能为将ip加到g_local_host_ip_addrs数组中去
 	load_local_host_ip_addrs();
 
 	return result;

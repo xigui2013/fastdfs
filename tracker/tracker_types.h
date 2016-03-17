@@ -355,9 +355,12 @@ typedef struct
 
 typedef struct
 {
+	//记录已分配空间的grop的数目，每次不够时加2
 	int alloc_size;   //alloc group count
-	int count;  //group count
+	//记录现在已有的group的数目
+	int count;  //group count 
 	FDFSGroupInfo **groups;
+	//存储排序后的group,通过group name排序
 	FDFSGroupInfo **sorted_groups; //groups order by group_name
 	FDFSGroupInfo *pStoreGroup;  //the group to store uploaded files
 	int current_write_group;  //current group index to upload file

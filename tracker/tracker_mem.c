@@ -435,7 +435,7 @@ static int tracker_malloc_all_group_path_mbs(FDFSGroups *pGroups)
 		{
 			continue;
 		}
-
+		//初始化path_total_mbs和path_free_mbs，作用未知
 		if ((result=tracker_malloc_group_path_mbs(*ppGroup)) != 0)
 		{
 			return result;
@@ -560,6 +560,8 @@ static int tracker_load_groups_new(FDFSGroups *pGroups, const char *data_path,
 
 	*nTrunkServerCount = 0;
 	*ppTrunkServers = NULL;
+	//从这看，group的记录文件有过明显变动，之前是storage_groups.dat
+	//后来修改成storage_groups_new.dat,并且优先用后者的配置文件
 	if (!fileExists(STORAGE_GROUPS_LIST_FILENAME_NEW) && \
 	     fileExists(STORAGE_GROUPS_LIST_FILENAME_OLD))
 	{
@@ -649,6 +651,7 @@ static int tracker_load_groups_new(FDFSGroups *pGroups, const char *data_path,
 			GROUP_ITEM_SUBDIR_COUNT_PER_PATH, &iniContext, 0);
 		pGroup->current_trunk_file_id = iniGetIntValue(section_name, \
 			GROUP_ITEM_CURRENT_TRUNK_FILE_ID, &iniContext, 0);
+		//后续为trunk server部分，暂时不看
 		pValue = iniGetStrValue(section_name, \
 			GROUP_ITEM_LAST_TRUNK_SERVER, &iniContext);
 		if (pValue != NULL)
@@ -677,22 +680,22 @@ static int tracker_load_groups_new(FDFSGroups *pGroups, const char *data_path,
 			GROUP_ITEM_TRUNK_SERVER, &iniContext);
 		if (pValue != NULL && *pValue != '\0')
 		{
-		if (nStorageSyncSize <= *nTrunkServerCount)
-		{
-			nStorageSyncSize += 8;
-			*ppTrunkServers = (FDFSStorageSync *)realloc( \
-				*ppTrunkServers, \
-				sizeof(FDFSStorageSync) * nStorageSyncSize);
-			if (*ppTrunkServers == NULL)
+			if (nStorageSyncSize <= *nTrunkServerCount)
 			{
-				result = errno != 0 ? errno : ENOMEM;
-				logError("file: "__FILE__", line: %d, " \
-					"realloc %d bytes fail", __LINE__, \
-					(int)sizeof(FDFSStorageSync) * \
-					nStorageSyncSize);
-				break;
+				nStorageSyncSize += 8;
+				*ppTrunkServers = (FDFSStorageSync *)realloc( \
+					*ppTrunkServers, \
+					sizeof(FDFSStorageSync) * nStorageSyncSize);
+				if (*ppTrunkServers == NULL)
+				{
+					result = errno != 0 ? errno : ENOMEM;
+					logError("file: "__FILE__", line: %d, " \
+						"realloc %d bytes fail", __LINE__, \
+						(int)sizeof(FDFSStorageSync) * \
+						nStorageSyncSize);
+					break;
+				}
 			}
-		}
 
 		strcpy((*ppTrunkServers)[*nTrunkServerCount].group_name, \
 			clientInfo.pGroup->group_name);
@@ -1078,7 +1081,8 @@ static int tracker_load_storages_new(FDFSGroups *pGroups, const char *data_path)
 	char section_name[64];
 	TrackerClientInfo clientInfo;
 	bool bInserted;
-
+	//storage 同group 应该都有过配置文件的升级
+	//storage和group是循环引用关系
 	if (!fileExists(STORAGE_SERVERS_LIST_FILENAME_NEW) && \
 	     fileExists(STORAGE_SERVERS_LIST_FILENAME_OLD))
 	{
@@ -1397,7 +1401,7 @@ static int tracker_load_storages_new(FDFSGroups *pGroups, const char *data_path)
 		free(pStorageSyncs);
 		return result;
 	}
-
+    //这部分代码没看懂，不知道干嘛用的
 	result = tracker_locate_storage_sync_server(pGroups, pStorageSyncs, \
 			nStorageSyncCount, true);
 	free(pStorageSyncs);
@@ -1670,7 +1674,7 @@ static int tracker_load_data(FDFSGroups *pGroups)
 	{
 		return 0;
 	}
-
+	//原有groups加载
 	if ((result=tracker_load_groups_new(pGroups, data_path, \
 		&pTrunkServers, &nTrunkServerCount)) != 0)
 	{
@@ -1686,19 +1690,19 @@ static int tracker_load_data(FDFSGroups *pGroups)
 	{
 		return result;
 	}
-
+	//暂时没看
 	if ((result=tracker_load_sync_timestamps(pGroups, data_path)) != 0)
 	{
 		return result;
 	}
-
+	//暂时不看小文件合并
 	if (g_if_use_trunk_file)
 	{
-	if ((result=tracker_locate_group_trunk_servers(pGroups, \
-		pTrunkServers, nTrunkServerCount, true)) != 0)
-	{
-		return result;
-	}
+		if ((result=tracker_locate_group_trunk_servers(pGroups, \
+			pTrunkServers, nTrunkServerCount, true)) != 0)
+		{
+			return result;
+		}
 	}
 
 	if (pTrunkServers != NULL)
@@ -2367,7 +2371,7 @@ static int tracker_mem_init_groups(FDFSGroups *pGroups)
 
 	memset(pGroups->sorted_groups, 0, \
 		sizeof(FDFSGroupInfo *) * pGroups->alloc_size);
-
+	//加载已有的group 和storage 数据，如不存在，跳过
 	if ((result=tracker_load_data(pGroups)) != 0)
 	{
 		return result;
@@ -2389,12 +2393,12 @@ int tracker_mem_init()
 	{
 		return result;
 	}
-
+	//初始化storage_changelog.bat文件记录，作用未知
 	if ((result=tracker_open_changlog_file()) != 0)
 	{
 		return result;
 	}
-
+	//内存初始化，主要是group和storage加载
 	return tracker_mem_init_groups(&g_groups);
 }
 
@@ -3154,7 +3158,7 @@ static int tracker_mem_add_group_ex(FDFSGroups *pGroups, \
 		strcpy(pGroup->group_name, group_name);
 		tracker_mem_insert_into_sorted_groups(pGroups, pGroup);
 		pGroups->count++;
-
+		//如果指定了哪个group返回数据，对应赋值
 		if ((pGroups->store_lookup == \
 				FDFS_STORE_LOOKUP_SPEC_GROUP) && \
 				(pGroups->pStoreGroup == NULL) && \

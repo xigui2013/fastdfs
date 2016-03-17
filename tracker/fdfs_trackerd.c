@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
 	srand(g_up_time);
 
 	log_init2();
-
+	//通过指定的conf文件，获取base path
 	conf_filename = argv[1];
 	if ((result=get_base_path_from_conf_file(conf_filename,
 		g_fdfs_base_path, sizeof(g_fdfs_base_path))) != 0)
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//启动程序，或者通过文件中的pid来kill掉之前的进程
 	snprintf(pidFilename, sizeof(pidFilename),
 		"%s/data/fdfs_trackerd.pid", g_fdfs_base_path);
 	if ((result=process_action(pidFilename, argv[2], &stop)) != 0)
@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//g_tracker_last_status只记录了uptime和last check time作用未知
 	if ((result=tracker_load_status_from_file(&g_tracker_last_status)) != 0)
 	{
 		logCrit("exit abnormally!\n");
@@ -179,23 +179,23 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//后台运行
 	daemon_init(false);
 	umask(0);
-	
+	//将pid记录到文件中
 	if ((result=write_to_pid_file(pidFilename)) != 0)
 	{
 		log_destroy();
 		return result;
 	}
-
+	//启动工作线程，这一块需要重点看
 	if ((result=tracker_service_init()) != 0)
 	{
 		logCrit("exit abnormally!\n");
 		log_destroy();
 		return result;
 	}
-	
+	//注册信号处理函数
 	memset(&act, 0, sizeof(act));
 	sigemptyset(&act.sa_mask);
 
