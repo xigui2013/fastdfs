@@ -20,8 +20,45 @@
 #include "logger.h"
 #include "fdfs_global.h"
 
+//连接超时时间，针对socket套接字函数connect
 int g_fdfs_connect_timeout = DEFAULT_CONNECT_TIMEOUT;
+//tracker server的网络超时，单位为秒。发送或接收数据时，如果在超时时间后还不能发送或接收数据，则本次网络通信失败。
 int g_fdfs_network_timeout = DEFAULT_NETWORK_TIMEOUT;
+/*
+# base_path 目录地址(根目录必须存在,子目录会自动创建)
+# 附目录说明:
+  tracker server目录及文件结构：
+  ${base_path}
+    |__data
+    |     |__storage_groups.dat：存储分组信息
+    |     |__storage_servers.dat：存储服务器列表
+    |__logs
+          |__trackerd.log：tracker server日志文件
+
+数据文件storage_groups.dat和storage_servers.dat中的记录之间以换行符（\n）分隔，字段之间以西文逗号（,）分隔。
+storage_groups.dat中的字段依次为：
+  1. group_name：组名
+  2. storage_port：storage server端口号
+
+storage_servers.dat中记录storage server相关信息，字段依次为：
+  1. group_name：所属组名
+  2. ip_addr：ip地址
+  3. status：状态
+  4. sync_src_ip_addr：向该storage server同步已有数据文件的源服务器
+  5. sync_until_timestamp：同步已有数据文件的截至时间（UNIX时间戳）
+  6. stat.total_upload_count：上传文件次数
+  7. stat.success_upload_count：成功上传文件次数
+  8. stat.total_set_meta_count：更改meta data次数
+  9. stat.success_set_meta_count：成功更改meta data次数
+  10. stat.total_delete_count：删除文件次数
+  11. stat.success_delete_count：成功删除文件次数
+  12. stat.total_download_count：下载文件次数
+  13. stat.success_download_count：成功下载文件次数
+  14. stat.total_get_meta_count：获取meta data次数
+  15. stat.success_get_meta_count：成功获取meta data次数
+  16. stat.last_source_update：最近一次源头更新时间（更新操作来自客户端）
+  17. stat.last_sync_update：最近一次同步更新时间（更新操作来自其他storage server的同步）
+*/
 char g_fdfs_base_path[MAX_PATH_SIZE] = {'/', 't', 'm', 'p', '\0'};
 Version g_fdfs_version = {5, 8};
 bool g_use_connection_pool = false;

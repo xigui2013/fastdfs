@@ -119,7 +119,11 @@ static int tracker_load_storage_id_info(const char *config_filename, \
 	{
 		g_id_type_in_filename = FDFS_ID_TYPE_IP_ADDRESS;
 	}
-
+	/*从配置文件中的storage_ids_filename读取配置文件名
+	storage_ids_filename = storage_ids.conf
+	# use_storage_id 设置为true，才需要设置本参数
+	# 在文件中设置组名、server ID和对应的IP地址，参见源码目录下的配置示例：conf/storage_ids.conf
+	*/
 	return fdfs_load_storage_ids_from_file(config_filename, pItemContext);
 }
 
@@ -163,6 +167,7 @@ int tracker_load_from_conf_file(const char *filename, \
 
 	do
 	{
+		//这个配置文件是否不生效
 		if (iniGetBoolValue(NULL, "disabled", &iniContext, false))
 		{
 			logError("file: "__FILE__", line: %d, " \

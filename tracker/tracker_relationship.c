@@ -29,6 +29,7 @@
 #include "tracker_mem.h"
 #include "tracker_relationship.h"
 
+//标识自己是否是leader
 bool g_if_leader_self = false;  //if I am leader
 
 static int fdfs_ping_leader(ConnectionInfo *pTrackerServer)
@@ -207,7 +208,7 @@ static int relationship_get_tracker_leader(TrackerRunningStatus *pTrackerStatus)
 	{
 		return result == 0 ? ENOENT : result;
 	}
-
+	//排序，最后一个tracker就是leader
 	qsort(trackerStatus, count, sizeof(TrackerRunningStatus), \
 		relationship_cmp_tracker_status);
 
@@ -381,12 +382,12 @@ static int relationship_select_leader()
 
 	logInfo("file: "__FILE__", line: %d, " \
 		"selecting leader...", __LINE__);
-
+	//获取各个tracker的信息，并排序，最后一个tracker就是leader 
 	if ((result=relationship_get_tracker_leader(&trackerStatus)) != 0)
 	{
 		return result;
 	}
-
+	//如果自己是leader
 	if (trackerStatus.pTrackerServer->port == g_server_port && \
 		is_local_host_ip(trackerStatus.pTrackerServer->ip_addr))
 	{

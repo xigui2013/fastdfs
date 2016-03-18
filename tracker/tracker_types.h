@@ -364,10 +364,31 @@ typedef struct
 	FDFSGroupInfo **sorted_groups; //groups order by group_name
 	FDFSGroupInfo *pStoreGroup;  //the group to store uploaded files
 	int current_write_group;  //current group index to upload file
+	/*
+	# 上传组(卷) 的方式 0:轮询方式 1: 指定组 2: 平衡负载(选择最大剩余空间的组(卷)上传)
+	# 这里如果在应用层指定了上传到一个固定组,那么这个参数被绕过
+	*/
 	byte store_lookup;  //store to which group, from conf file
+	/*
+	# 选择哪个storage server 进行上传操作(一个文件被上传后，这个storage server就相当于这个文件的storage server源，会对同组的storage server推送这个文件达到同步效果)
+	# 0: 轮询方式 
+	# 1: 根据ip 地址进行排序选择第一个服务器（IP地址最小者）
+	# 2: 根据优先级进行排序（上传优先级由storage server来设置，参数名为upload_priority） 
+	*/
 	byte store_server;  //store to which storage server, from conf file
+	/*
+	# 选择哪个 storage server 作为下载服务器
+	# 0: 轮询方式，可以下载当前文件的任一storage server
+	# 1: 哪个为源storage server 就用哪一个 (前面说过了这个storage server源 是怎样产生的) 就是之前上传到哪个storage server服务器就是哪个了
+	*/
 	byte download_server; //download from which storage server, from conf file
+	/*
+	# 选择storage server 中的哪个目录进行上传。storage server可以有多个存放文件的base path（可以理解为多个磁盘）。
+	# 0: 轮流方式，多个目录依次存放文件
+	# 2: 选择剩余空间最大的目录存放文件（注意：剩余磁盘空间是动态的，因此存储到的目录或磁盘可能也是变化的）
+	*/
 	byte store_path;  //store to which path, from conf file
+	//# 当上一个参数设定为1 时 (store_lookup=1，即指定组名时)，必须设置本参数为系统中存在的一个组名。如果选择其他的上传方式，这个参数就没有效了。
 	char store_group[FDFS_GROUP_NAME_MAX_LEN + 8];  //for 8 bytes aliginment
 } FDFSGroups;
 

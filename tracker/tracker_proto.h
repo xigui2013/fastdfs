@@ -15,6 +15,8 @@
 #include "connection_pool.h"
 #include "ini_file_reader.h"
 
+//处理storage的加入请求，tracker是不会发送join请求的，
+//tracker的server是通过storage的join请求加入的
 #define TRACKER_PROTO_CMD_STORAGE_JOIN              81
 #define FDFS_PROTO_CMD_QUIT			    82
 #define TRACKER_PROTO_CMD_STORAGE_BEAT              83  //storage heart beat
@@ -40,9 +42,13 @@
 #define TRACKER_PROTO_CMD_TRACKER_GET_SYS_FILES_START    61  //start of tracker get system data files
 #define TRACKER_PROTO_CMD_TRACKER_GET_SYS_FILES_END      62  //end of tracker get system data files
 #define TRACKER_PROTO_CMD_TRACKER_GET_ONE_SYS_FILE       63  //tracker get a system data file
+		//获取其他tracker的状态,选主的时候用
 #define TRACKER_PROTO_CMD_TRACKER_GET_STATUS             64  //tracker get status of other tracker
+		//ping请求，会收到tracker管理的组名及storage id 的返回
 #define TRACKER_PROTO_CMD_TRACKER_PING_LEADER            65  //tracker ping leader
+		//通知全tracker，清空leader信息
 #define TRACKER_PROTO_CMD_TRACKER_NOTIFY_NEXT_LEADER     66  //notify next leader to other trackers
+		//通知全tracker,设置新的leader信息
 #define TRACKER_PROTO_CMD_TRACKER_COMMIT_NEXT_LEADER     67  //commit next leader to other trackers
 #define TRACKER_PROTO_CMD_TRACKER_NOTIFY_RESELECT_LEADER 68  //storage notify reselect leader when split-brain
 

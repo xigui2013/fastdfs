@@ -48,7 +48,7 @@
 
 static bool bTerminateFlag = false;
 static bool bAcceptEndFlag = false;
-
+//绑定的IP地址 (常用于服务器有多个IP但只希望一个IP提供服务)。如果不填则表示所有的
 static char bind_addr[IP_ADDRESS_SIZE];
 
 static void sigQuitHandler(int sig);
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 			"set_rand_seed fail, program exit!", __LINE__);
 		return result;
 	}
-
+	//内存分配及历史group和storage载入
 	if ((result=tracker_mem_init()) != 0)
 	{
 		logCrit("exit abnormally!\n");
@@ -303,21 +303,21 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//schedule 调度线程，主要作用待细看
 	scheduleArray.entries = scheduleEntries;
 	scheduleArray.count = 0;
 	memset(scheduleEntries, 0, sizeof(scheduleEntries));
-
+	//日志处理，日志是先存在cache中的，需要定时存储
 	INIT_SCHEDULE_ENTRY(scheduleEntries[scheduleArray.count],
 		scheduleArray.count + 1, TIME_NONE, TIME_NONE, TIME_NONE,
 		g_sync_log_buff_interval, log_sync_func, &g_log_context);
 	scheduleArray.count++;
-
+	//用户检测trunk server服务器是否可用(trunk server是选定的一个storage)
 	INIT_SCHEDULE_ENTRY(scheduleEntries[scheduleArray.count],
 		scheduleArray.count + 1, TIME_NONE, TIME_NONE, TIME_NONE,
 		g_check_active_interval, tracker_mem_check_alive, NULL);
 	scheduleArray.count++;
-
+	//每5分钟刷新一下status
 	INIT_SCHEDULE_ENTRY(scheduleEntries[scheduleArray.count],
 		scheduleArray.count + 1, 0, 0, 0,
 		TRACKER_SYNC_STATUS_FILE_INTERVAL,
@@ -349,7 +349,7 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//选主机制，tracker默认不会把自己加入队列
 	if ((result=tracker_relationship_init()) != 0)
 	{
 		logCrit("exit abnormally!\n");
@@ -361,7 +361,7 @@ int main(int argc, char *argv[])
 
 	bTerminateFlag = false;
 	bAcceptEndFlag = false;
-
+	//accept线程，工作线程和消息接收线程是分开的
 	tracker_accept_loop(sock);
 	bAcceptEndFlag = true;
 	if (g_schedule_flag)
@@ -383,6 +383,7 @@ int main(int argc, char *argv[])
 #endif
 
 	wait_count = 0;
+	//线程数和调度flag还在，则继续运行程序
 	while ((g_tracker_thread_count != 0) || g_schedule_flag)
 	{
 

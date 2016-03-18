@@ -3983,7 +3983,7 @@ static int tracker_mem_first_add_tracker_servers(FDFSStorageJoinBody *pJoinBody)
 	memcpy(servers, pJoinBody->tracker_servers, bytes);
 
 	pLocalEnd = servers + tracker_count;
-       	for (pLocalTracker=servers; pLocalTracker<pLocalEnd; \
+    for (pLocalTracker=servers; pLocalTracker<pLocalEnd; \
 		pLocalTracker++)
 	{
 		pLocalTracker->sock = -1;
@@ -5917,48 +5917,48 @@ int tracker_mem_check_alive(void *arg)
 	ppGroupEnd = g_groups.groups + g_groups.count;
 	for (ppGroup=g_groups.groups; ppGroup<ppGroupEnd; ppGroup++)
 	{
-	deactiveCount = 0;
-	ppServerEnd = (*ppGroup)->active_servers + (*ppGroup)->active_count;
-	for (ppServer=(*ppGroup)->active_servers; ppServer<ppServerEnd; ppServer++)
-	{
-		if (current_time - (*ppServer)->stat.last_heart_beat_time > \
-			g_check_active_interval)
+		deactiveCount = 0;
+		ppServerEnd = (*ppGroup)->active_servers + (*ppGroup)->active_count;
+		for (ppServer=(*ppGroup)->active_servers; ppServer<ppServerEnd; ppServer++)
 		{
-			deactiveServers[deactiveCount] = *ppServer;
-			deactiveCount++;
-			if (deactiveCount >= FDFS_MAX_SERVERS_EACH_GROUP)
+			if (current_time - (*ppServer)->stat.last_heart_beat_time > \
+				g_check_active_interval)
 			{
-				break;
+				deactiveServers[deactiveCount] = *ppServer;
+				deactiveCount++;
+				if (deactiveCount >= FDFS_MAX_SERVERS_EACH_GROUP)
+				{
+					break;
+				}
 			}
 		}
-	}
 
-	if (deactiveCount == 0)
-	{
-		continue;
-	}
+		if (deactiveCount == 0)
+		{
+			continue;
+		}
 
-	ppServerEnd = deactiveServers + deactiveCount;
-	for (ppServer=deactiveServers; ppServer<ppServerEnd; ppServer++)
-	{
-		(*ppServer)->status = FDFS_STORAGE_STATUS_OFFLINE;
-		tracker_mem_deactive_store_server(*ppGroup, *ppServer);
-		if (g_use_storage_id)
+		ppServerEnd = deactiveServers + deactiveCount;
+		for (ppServer=deactiveServers; ppServer<ppServerEnd; ppServer++)
 		{
-			logInfo("file: "__FILE__", line: %d, " \
-				"storage server %s(%s:%d) idle too long, " \
-				"status change to offline!", __LINE__, \
-				(*ppServer)->id, (*ppServer)->ip_addr, \
-				(*ppGroup)->storage_port);
+			(*ppServer)->status = FDFS_STORAGE_STATUS_OFFLINE;
+			tracker_mem_deactive_store_server(*ppGroup, *ppServer);
+			if (g_use_storage_id)
+			{
+				logInfo("file: "__FILE__", line: %d, " \
+					"storage server %s(%s:%d) idle too long, " \
+					"status change to offline!", __LINE__, \
+					(*ppServer)->id, (*ppServer)->ip_addr, \
+					(*ppGroup)->storage_port);
+			}
+			else
+			{
+				logInfo("file: "__FILE__", line: %d, " \
+					"storage server %s:%d idle too long, " \
+					"status change to offline!", __LINE__, \
+					(*ppServer)->ip_addr, (*ppGroup)->storage_port);
+			}
 		}
-		else
-		{
-			logInfo("file: "__FILE__", line: %d, " \
-				"storage server %s:%d idle too long, " \
-				"status change to offline!", __LINE__, \
-				(*ppServer)->ip_addr, (*ppGroup)->storage_port);
-		}
-	}
 	}
 
 	if ((!g_if_leader_self) || (!g_if_use_trunk_file))

@@ -186,30 +186,30 @@ int tracker_service_init()
 
 int tracker_terminate_threads()
 {
-        struct nio_thread_data *pThreadData;
-        struct nio_thread_data *pDataEnd;
-        int quit_sock;
+    struct nio_thread_data *pThreadData;
+    struct nio_thread_data *pDataEnd;
+    int quit_sock;
 
-        if (g_thread_data != NULL)
+    if (g_thread_data != NULL)
+    {
+        pDataEnd = g_thread_data + g_work_threads;
+        quit_sock = 0;
+        for (pThreadData=g_thread_data; pThreadData<pDataEnd; \
+                pThreadData++)
         {
-                pDataEnd = g_thread_data + g_work_threads;
-                quit_sock = 0;
-                for (pThreadData=g_thread_data; pThreadData<pDataEnd; \
-                        pThreadData++)
-                {
-                        quit_sock--;
-                        if (write(pThreadData->pipe_fds[1], &quit_sock, \
-                                        sizeof(quit_sock)) != sizeof(quit_sock))
+            quit_sock--;
+            if (write(pThreadData->pipe_fds[1], &quit_sock, \
+                            sizeof(quit_sock)) != sizeof(quit_sock))
 			{
 				logError("file: "__FILE__", line: %d, " \
 					"write to pipe fail, " \
 					"errno: %d, error info: %s", \
 					__LINE__, errno, STRERROR(errno));
 			}
-                }
         }
+    }
 
-        return 0;
+    return 0;
 }
 
 static void wait_for_work_threads_exit()
