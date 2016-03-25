@@ -1860,12 +1860,12 @@ int storage_func_init(const char *filename, \
 	{
 		return result;
 	}
-
+	//获取可用的tracker ip
 	if ((result=storage_get_my_tracker_client_ip()) != 0)
 	{
 		return result;
 	}
-
+	//检查storage文件系统，看是否损坏，如是新接入storage则新建目录结构
 	if ((result=storage_check_and_make_data_dirs()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -1873,12 +1873,12 @@ int storage_func_init(const char *filename, \
 			"program exit!", __LINE__);
 		return result;
 	}
-
+	//从tracker中获取本机的上下文
 	if ((result=storage_get_params_from_tracker()) != 0)
 	{
 		return result;
 	}
-
+	//获取本机的id，为了做ip变更的兼容
 	if ((result=tracker_get_my_server_id()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -1890,23 +1890,24 @@ int storage_func_init(const char *filename, \
 
 	if (g_use_storage_id)
 	{
+		//获取本group下其他storage的id和ip
 		if ((result=fdfs_get_storage_ids_from_tracker_group( \
 				&g_tracker_group)) != 0)
 		{
 			return result;
 		}
 	}
-
+	//上报本机ip
 	if ((result=storage_check_ip_changed()) != 0)
 	{
 		return result;
 	}
-
+	//线程锁相关初始化
 	if ((result=init_pthread_lock(&sync_stat_file_lock)) != 0)
 	{
 		return result;
 	}
-
+	//本机其他信息初始化
 	return storage_open_stat_file();
 }
 

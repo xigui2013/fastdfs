@@ -99,9 +99,11 @@ int main(int argc, char *argv[])
 	g_up_time = g_current_time;
 
 	log_init2();
+	//base64初始化
 	trunk_shared_init();
 
 	conf_filename = argv[1];
+	//读取基本路径
 	if ((result=get_base_path_from_conf_file(conf_filename,
 		g_fdfs_base_path, sizeof(g_fdfs_base_path))) != 0)
 	{
@@ -111,6 +113,7 @@ int main(int argc, char *argv[])
 
 	snprintf(pidFilename, sizeof(pidFilename),
 		"%s/data/fdfs_storaged.pid", g_fdfs_base_path);
+	//stop start or restart the progress
 	if ((result=process_action(pidFilename, argv[2], &stop)) != 0)
 	{
 		if (result == EINVAL)
@@ -135,11 +138,12 @@ int main(int argc, char *argv[])
 		return errno != 0 ? errno : ENOENT;
 	}
 #endif
-
+	//后台运行
 	daemon_init(false);
 	umask(0);
 
 	memset(g_bind_addr, 0, sizeof(g_bind_addr));
+	//初始化
 	if ((result=storage_func_init(conf_filename, \
 			g_bind_addr, sizeof(g_bind_addr))) != 0)
 	{
@@ -168,7 +172,7 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//同步相关初始化，binlog相关
 	if ((result=storage_sync_init()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -176,7 +180,7 @@ int main(int argc, char *argv[])
 		g_continue_flag = false;
 		return result;
 	}
-
+	//tracker上报初始化
 	if ((result=tracker_report_init()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -184,7 +188,7 @@ int main(int argc, char *argv[])
 		g_continue_flag = false;
 		return result;
 	}
-
+	//storage服务初始化，启动work线程
 	if ((result=storage_service_init()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -192,7 +196,7 @@ int main(int argc, char *argv[])
 		g_continue_flag = false;
 		return result;
 	}
-
+	//初始化随机种子
 	if ((result=set_rand_seed()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -292,7 +296,7 @@ int main(int argc, char *argv[])
 		}
 	}
 #endif
-
+	//启动定时上报线程
 	if ((result=tracker_report_thread_start()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -401,7 +405,7 @@ int main(int argc, char *argv[])
 
 	bTerminateFlag = false;
 	bAcceptEndFlag = false;
-	
+	//多线程监听用户接入
 	storage_accept_loop(sock);
 	bAcceptEndFlag = true;
 

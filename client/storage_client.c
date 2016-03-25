@@ -802,6 +802,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	const FDFSMetaData *meta_list, const int meta_count, \
 	char *group_name, char *remote_filename)
 {
+	//file_buff文件名
 	TrackerHeader *pHeader;
 	int result;
 	char out_buff[512];
@@ -836,7 +837,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	{
 		prefix_len = 0;
 	}
-
+	//文件续传?
 	bUploadSlave = (strlen(group_name) > 0 && master_filename_len > 0);
 	if (bUploadSlave)
 	{
@@ -864,92 +865,69 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 
 	do
 	{
-	pHeader = (TrackerHeader *)out_buff;
-	p = out_buff + sizeof(TrackerHeader);
-	if (bUploadSlave)
-	{
-		long2buff(master_filename_len, p);
+		pHeader = (TrackerHeader *)out_buff;
+		p = out_buff + sizeof(TrackerHeader);
+		if (bUploadSlave)
+		{
+			long2buff(master_filename_len, p);
+			p += FDFS_PROTO_PKG_LEN_SIZE;
+		}
+		else
+		{
+			*p++ = (char)new_store_path;
+		}
+
+		long2buff(file_size, p);
 		p += FDFS_PROTO_PKG_LEN_SIZE;
-	}
-	else
-	{
-		*p++ = (char)new_store_path;
-	}
 
-	long2buff(file_size, p);
-	p += FDFS_PROTO_PKG_LEN_SIZE;
-
-	if (bUploadSlave)
-	{
-		memset(p, 0, FDFS_FILE_PREFIX_MAX_LEN + \
-				FDFS_FILE_EXT_NAME_MAX_LEN);
-		if (prefix_len > FDFS_FILE_PREFIX_MAX_LEN)
+		if (bUploadSlave)
 		{
-			prefix_len = FDFS_FILE_PREFIX_MAX_LEN;
+			memset(p, 0, FDFS_FILE_PREFIX_MAX_LEN + \
+					FDFS_FILE_EXT_NAME_MAX_LEN);
+			if (prefix_len > FDFS_FILE_PREFIX_MAX_LEN)
+			{
+				prefix_len = FDFS_FILE_PREFIX_MAX_LEN;
+			}
+			if (prefix_len > 0)
+			{
+				memcpy(p, prefix_name, prefix_len);
+			}
+			p += FDFS_FILE_PREFIX_MAX_LEN;
 		}
-		if (prefix_len > 0)
+		else
 		{
-			memcpy(p, prefix_name, prefix_len);
+			memset(p, 0, FDFS_FILE_EXT_NAME_MAX_LEN);
 		}
-		p += FDFS_FILE_PREFIX_MAX_LEN;
-	}
-	else
-	{
-		memset(p, 0, FDFS_FILE_EXT_NAME_MAX_LEN);
-	}
 
-	if (file_ext_name != NULL)
-	{
-		int file_ext_len;
-
-		file_ext_len = strlen(file_ext_name);
-		if (file_ext_len > FDFS_FILE_EXT_NAME_MAX_LEN)
+		if (file_ext_name != NULL)
 		{
-			file_ext_len = FDFS_FILE_EXT_NAME_MAX_LEN;
+			int file_ext_len;
+
+			file_ext_len = strlen(file_ext_name);
+			if (file_ext_len > FDFS_FILE_EXT_NAME_MAX_LEN)
+			{
+				file_ext_len = FDFS_FILE_EXT_NAME_MAX_LEN;
+			}
+			if (file_ext_len > 0)
+			{
+				memcpy(p, file_ext_name, file_ext_len);
+			}
 		}
-		if (file_ext_len > 0)
+		p += FDFS_FILE_EXT_NAME_MAX_LEN;
+
+		if (bUploadSlave)
 		{
-			memcpy(p, file_ext_name, file_ext_len);
+			memcpy(p, master_filename, master_filename_len);
+			p += master_filename_len;
 		}
-	}
-	p += FDFS_FILE_EXT_NAME_MAX_LEN;
 
-	if (bUploadSlave)
-	{
-		memcpy(p, master_filename, master_filename_len);
-		p += master_filename_len;
-	}
+		long2buff((p - out_buff) + file_size - sizeof(TrackerHeader), \
+			pHeader->pkg_len);
+		pHeader->cmd = cmd;
+		pHeader->status = 0;
 
-	long2buff((p - out_buff) + file_size - sizeof(TrackerHeader), \
-		pHeader->pkg_len);
-	pHeader->cmd = cmd;
-	pHeader->status = 0;
-
-	if ((result=tcpsenddata_nb(pStorageServer->sock, out_buff, \
-		p - out_buff, g_fdfs_network_timeout)) != 0)
-	{
-		logError("file: "__FILE__", line: %d, " \
-			"send data to storage server %s:%d fail, " \
-			"errno: %d, error info: %s", __LINE__, \
-			pStorageServer->ip_addr, pStorageServer->port, \
-			result, STRERROR(result));
-		break;
-	}
-
-	if (upload_type == FDFS_UPLOAD_BY_FILE)
-	{
-		if ((result=tcpsendfile(pStorageServer->sock, file_buff, \
-			file_size, g_fdfs_network_timeout, \
-			&total_send_bytes)) != 0)
-		{
-			break;
-		}
-	}
-	else if (upload_type == FDFS_UPLOAD_BY_BUFF)
-	{
-		if ((result=tcpsenddata_nb(pStorageServer->sock, \
-			(char *)file_buff, file_size, \
-			g_fdfs_network_timeout)) != 0)
+		if ((result=tcpsenddata_nb(pStorageServer->sock, out_buff, \
+			p - out_buff, g_fdfs_network_timeout)) != 0)
 		{
 			logError("file: "__FILE__", line: %d, " \
 				"send data to storage server %s:%d fail, " \
@@ -958,47 +936,71 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 				result, STRERROR(result));
 			break;
 		}
-	}
-	else //FDFS_UPLOAD_BY_CALLBACK
-	{
-		UploadCallback callback;
-		callback = (UploadCallback)file_buff;
-		if ((result=callback(arg, file_size, pStorageServer->sock))!=0)
+
+		if (upload_type == FDFS_UPLOAD_BY_FILE)
+		{
+			if ((result=tcpsendfile(pStorageServer->sock, file_buff, \
+				file_size, g_fdfs_network_timeout, \
+				&total_send_bytes)) != 0)
+			{
+				break;
+			}
+		}
+		else if (upload_type == FDFS_UPLOAD_BY_BUFF)
+		{
+			if ((result=tcpsenddata_nb(pStorageServer->sock, \
+				(char *)file_buff, file_size, \
+				g_fdfs_network_timeout)) != 0)
+			{
+				logError("file: "__FILE__", line: %d, " \
+					"send data to storage server %s:%d fail, " \
+					"errno: %d, error info: %s", __LINE__, \
+					pStorageServer->ip_addr, pStorageServer->port, \
+					result, STRERROR(result));
+				break;
+			}
+		}
+		else //FDFS_UPLOAD_BY_CALLBACK
+		{
+			UploadCallback callback;
+			callback = (UploadCallback)file_buff;
+			if ((result=callback(arg, file_size, pStorageServer->sock))!=0)
+			{
+				break;
+			}
+		}
+
+		pInBuff = in_buff;
+		if ((result=fdfs_recv_response(pStorageServer, \
+			&pInBuff, sizeof(in_buff), &in_bytes)) != 0)
 		{
 			break;
 		}
-	}
 
-	pInBuff = in_buff;
-	if ((result=fdfs_recv_response(pStorageServer, \
-		&pInBuff, sizeof(in_buff), &in_bytes)) != 0)
-	{
-		break;
-	}
+		if (in_bytes <= FDFS_GROUP_NAME_MAX_LEN)
+		{
+			logError("file: "__FILE__", line: %d, " \
+				"storage server %s:%d response data " \
+				"length: %"PRId64" is invalid, " \
+				"should > %d", __LINE__, \
+				pStorageServer->ip_addr, pStorageServer->port, \
+				in_bytes, FDFS_GROUP_NAME_MAX_LEN);
+			result = EINVAL;
+			break;
+		}
 
-	if (in_bytes <= FDFS_GROUP_NAME_MAX_LEN)
-	{
-		logError("file: "__FILE__", line: %d, " \
-			"storage server %s:%d response data " \
-			"length: %"PRId64" is invalid, " \
-			"should > %d", __LINE__, \
-			pStorageServer->ip_addr, pStorageServer->port, \
-			in_bytes, FDFS_GROUP_NAME_MAX_LEN);
-		result = EINVAL;
-		break;
-	}
+		in_buff[in_bytes] = '\0';
+		memcpy(group_name, in_buff, FDFS_GROUP_NAME_MAX_LEN);
+		group_name[FDFS_GROUP_NAME_MAX_LEN] = '\0';
 
-	in_buff[in_bytes] = '\0';
-	memcpy(group_name, in_buff, FDFS_GROUP_NAME_MAX_LEN);
-	group_name[FDFS_GROUP_NAME_MAX_LEN] = '\0';
-
-	memcpy(remote_filename, in_buff + FDFS_GROUP_NAME_MAX_LEN, \
-		in_bytes - FDFS_GROUP_NAME_MAX_LEN + 1);
+		memcpy(remote_filename, in_buff + FDFS_GROUP_NAME_MAX_LEN, \
+			in_bytes - FDFS_GROUP_NAME_MAX_LEN + 1);
 
 	} while (0);
 
 	if (result == 0 && meta_count > 0)
 	{
+		//把文件属性(meta)发给tracker
 		result = storage_set_metadata(pTrackerServer, \
 			pStorageServer, group_name, remote_filename, \
 			meta_list, meta_count, \
@@ -1081,21 +1083,21 @@ int storage_upload_by_filename_ex(ConnectionInfo *pTrackerServer, \
 		const int meta_count, char *group_name, char *remote_filename)
 {
 	struct stat stat_buf;
-
+	//通过文件名获取文件信息
 	if (stat(local_filename, &stat_buf) != 0)
 	{
 		group_name[0] = '\0';
 		remote_filename[0] = '\0';
 		return errno;
 	}
-
+	//判文件是否是一个常规文件
 	if (!S_ISREG(stat_buf.st_mode))
 	{
 		group_name[0] = '\0';
 		remote_filename[0] = '\0';
 		return EINVAL;
 	}
-
+	//获取文件后缀名
 	if (file_ext_name == NULL)
 	{
 		file_ext_name = fdfs_get_file_ext_name(local_filename);

@@ -1,4 +1,4 @@
-/**
+f/**
 * Copyright (C) 2008 Happy Fish / YuQing
 *
 * FastDFS may be copied only under the terms of the GNU General
@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 			result, STRERROR(result));
 		return result;
 	}
-
+	//上传文件
 	result = storage_upload_by_filename1(pTrackerServer, \
 			&storageServer, store_path_index, \
 			local_filename, NULL, \
