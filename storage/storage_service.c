@@ -1128,7 +1128,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 
 	pClientInfo = (StorageClientInfo *)pTask->arg;
 	pFileContext =  &(pClientInfo->file_context);
-
+	//小文件合并存储
 	if (pFileContext->extra_info.upload.file_type & _FILE_TYPE_TRUNK)
 	{
 		result = trunk_client_trunk_alloc_confirm( \
@@ -1138,6 +1138,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 			result = err_no;
 		}
 	}
+	//这里err_no是调用函数传过来的，理论上应该为0，不然没法看了都
 	else
 	{
 		result = err_no;
@@ -1148,13 +1149,13 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 		result = storage_service_upload_file_done(pTask);
 		if (result == 0)
 		{
-		if (pFileContext->create_flag & STORAGE_CREATE_FLAG_FILE)
-		{
-			result = storage_binlog_write(\
-				pFileContext->timestamp2log, \
-				STORAGE_OP_TYPE_SOURCE_CREATE_FILE, \
-				pFileContext->fname2log);
-		}
+			if (pFileContext->create_flag & STORAGE_CREATE_FLAG_FILE)
+			{
+				result = storage_binlog_write(\
+					pFileContext->timestamp2log, \
+					STORAGE_OP_TYPE_SOURCE_CREATE_FILE, \
+					pFileContext->fname2log);
+			}
 		}
 	}
 
@@ -2128,7 +2129,7 @@ static int storage_gen_filename(StorageClientInfo *pClientInfo, \
 	//base64编码转换
 	base64_encode_ex(&g_fdfs_base64_context, buff, sizeof(int) * 5, encoded, \
 			filename_len, false);
-	//取前几个字符做目录
+	//轮询，或者通过encoded获取前几个字符作为两级目录
 	if (!pClientInfo->file_context.extra_info.upload.if_sub_path_alloced)
 	{
 		int sub_path_high;
@@ -2417,7 +2418,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 			file_size_in_name = file_size;
 		}
 	}
-
+	//为什么又要生成一次名称?
 	if ((result=storage_get_filename(pClientInfo, end_time, \
 		file_size_in_name, pFileContext->crc32, \
 		pFileContext->extra_info.upload.formatted_ext_name, \
@@ -2445,6 +2446,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 			new_filename + FDFS_TRUE_FILE_PATH_LEN + \
 			FDFS_FILENAME_BASE64_LENGTH);
 	}
+	//rename the old file
 	else if (rename(pFileContext->filename, new_full_filename) != 0)
 	{
 		result = errno != 0 ? errno : EPERM;
@@ -2465,7 +2467,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 		pFileContext->create_flag = STORAGE_CREATE_FLAG_FILE;
 		return 0;
 	}
-
+	//主从文件
 	if ((pFileContext->extra_info.upload.file_type & _FILE_TYPE_SLAVE))
 	{
 		char true_filename[128];
@@ -2564,7 +2566,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 	{
 		strcpy(pFileContext->filename, new_full_filename);
 	}
-
+	//
 	if (g_check_file_duplicate && !(pFileContext->extra_info.upload.file_type & \
 		_FILE_TYPE_LINK))
 	{
@@ -3301,6 +3303,7 @@ static int storage_server_set_metadata(struct fast_task_info *pTask)
 		pClientInfo);
 
 	true_filename_len = filename_len;
+	//文件名检查，并去掉前面的M00/,同时获得store_path_index
 	if ((result=storage_split_filename_ex(filename, \
 		&true_filename_len, true_filename, &store_path_index)) != 0)
 	{
@@ -4460,7 +4463,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 	memcpy(file_ext_name, p, FDFS_FILE_EXT_NAME_MAX_LEN);
 	*(file_ext_name + FDFS_FILE_EXT_NAME_MAX_LEN) = '\0';
 	p += FDFS_FILE_EXT_NAME_MAX_LEN;
-	//文件名基本校验及保证文件名只有字母及'-' '_' '.'
+	//文件扩展名基本校验及保证文件名只有字母及'-' '_' '.'
 	if ((result=fdfs_validate_filename(file_ext_name)) != 0)
 	{
 		logError("file: "__FILE__", line: %d, " \
@@ -4469,14 +4472,15 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 			pTask->client_ip, file_ext_name);
 		return result;
 	}
-
+	//crc32验证标记
 	pFileContext->calc_crc32 = true;
+	//标记文件是否是副本文件
 	pFileContext->calc_file_hash = g_check_file_duplicate;
 	//获取当前时间
 	pFileContext->extra_info.upload.start_time = g_current_time;
 
 	strcpy(pFileContext->extra_info.upload.file_ext_name, file_ext_name);
-	//通过扩展名生成7位随机字符
+	//处理扩展名，保证扩展名部分为7位，不够7位部分，在前面用随机字符补齐
 	storage_format_ext_name(file_ext_name, \
 			pFileContext->extra_info.upload.formatted_ext_name);
 	pFileContext->extra_info.upload.trunk_info.path. \
@@ -4485,6 +4489,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 	pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
 	pFileContext->timestamp2log = pFileContext->extra_info.upload.start_time;
 	pFileContext->op = FDFS_STORAGE_FILE_OP_WRITE;
+	//确定文件上传类型:appen,trunk or other用位表示
 	if (bAppenderFile)
 	{
 		pFileContext->extra_info.upload.file_type |= \
@@ -4553,7 +4558,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 		*filename = '\0';
 		filename_len = 0;
 		pFileContext->extra_info.upload.if_sub_path_alloced = false;
-		//获取文件名字
+		//获取如果要存储在storage中，该文件的名字
 		if ((result=storage_get_filename(pClientInfo, \
 			pFileContext->extra_info.upload.start_time, \			//文件开始上传时间
 			file_bytes, crc32, pFileContext->extra_info.upload.\

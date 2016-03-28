@@ -1162,7 +1162,7 @@ int storage_func_init(const char *filename, \
 
 		g_client_bind_addr = iniGetBoolValue(NULL, "client_bind", \
 					&iniContext, true);
-
+		//读取配置中的所有tracker server
 		result = fdfs_load_tracker_group_ex(&g_tracker_group, \
 				filename, &iniContext);
 		if (result != 0)

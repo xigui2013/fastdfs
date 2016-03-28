@@ -35,7 +35,9 @@
 #define TRACKER_PROTO_CMD_STORAGE_REPORT_TRUNK_FID  73  //storage report current trunk file id
 #define TRACKER_PROTO_CMD_STORAGE_FETCH_TRUNK_FID   72  //storage get current trunk file id
 #define TRACKER_PROTO_CMD_STORAGE_GET_STATUS	    71  //get storage status from tracker
+//获取storage的id
 #define TRACKER_PROTO_CMD_STORAGE_GET_SERVER_ID	    70  //get storage server id from tracker
+//获取所有storage的id
 #define TRACKER_PROTO_CMD_STORAGE_FETCH_STORAGE_IDS 69  //get all storage ids from tracker
 #define TRACKER_PROTO_CMD_STORAGE_GET_GROUP_NAME   109  //get storage group name from tracker
 
@@ -74,6 +76,7 @@
 //往storage上传文件
 #define STORAGE_PROTO_CMD_UPLOAD_FILE		11
 #define STORAGE_PROTO_CMD_DELETE_FILE		12
+//设置文件属性
 #define STORAGE_PROTO_CMD_SET_METADATA		13
 #define STORAGE_PROTO_CMD_DOWNLOAD_FILE		14
 #define STORAGE_PROTO_CMD_GET_METADATA		15

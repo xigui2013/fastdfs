@@ -296,7 +296,7 @@ int main(int argc, char *argv[])
 		}
 	}
 #endif
-	//启动定时上报线程
+	//启动定时上报线程(心跳线程)，同时可能有文件同步相关
 	if ((result=tracker_report_thread_start()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -405,7 +405,7 @@ int main(int argc, char *argv[])
 
 	bTerminateFlag = false;
 	bAcceptEndFlag = false;
-	//多线程监听用户接入
+	//多线程监听用户接入，阻塞进程
 	storage_accept_loop(sock);
 	bAcceptEndFlag = true;
 

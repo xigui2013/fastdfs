@@ -920,7 +920,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 			memcpy(p, master_filename, master_filename_len);
 			p += master_filename_len;
 		}
-
+		//计算包长度
 		long2buff((p - out_buff) + file_size - sizeof(TrackerHeader), \
 			pHeader->pkg_len);
 		pHeader->cmd = cmd;
@@ -971,6 +971,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 		}
 
 		pInBuff = in_buff;
+		//文件发送完成，获取fdfs给的group name和remote filename
 		if ((result=fdfs_recv_response(pStorageServer, \
 			&pInBuff, sizeof(in_buff), &in_bytes)) != 0)
 		{
@@ -1005,6 +1006,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 			pStorageServer, group_name, remote_filename, \
 			meta_list, meta_count, \
 			STORAGE_SET_METADATA_FLAG_OVERWRITE);
+		//属性更新失败需要回滚?
 		if (result != 0)  //rollback
 		{
 			storage_delete_file(pTrackerServer, pStorageServer, \
