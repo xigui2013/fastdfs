@@ -1209,6 +1209,8 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 	long2buff(pClientInfo->total_length - sizeof(TrackerHeader), \
 			pHeader->pkg_len);
 
+	//又看到熟悉的函数了，这完成以后将pTask从磁盘线程压入work线程
+    //work线程调用storage_recv_notify_read函数来做下一步处理
 	storage_nio_notify(pTask);
 }
 
@@ -1600,6 +1602,7 @@ int storage_service_init()
 
     init_connections = g_max_connections < ALLOC_CONNECTIONS_ONCE ?
         g_max_connections : ALLOC_CONNECTIONS_ONCE;
+	//建立任务task对象池，复用task类型
 	if ((result=free_queue_init_ex(g_max_connections, init_connections,
                     ALLOC_CONNECTIONS_ONCE, g_buff_size,
                     g_buff_size, sizeof(StorageClientInfo))) != 0)
@@ -1666,7 +1669,7 @@ int storage_service_init()
 			break;
 		}
 #endif
-
+		//创建工作线程
 		if ((result=pthread_create(&tid, &thread_attr, \
 			work_thread_entrance, pThreadData)) != 0)
 		{
@@ -1820,7 +1823,7 @@ static void *accept_thread_entrance(void* arg)
 			close(incomesock);
 			continue;
 		}
-
+		//从task对象池里拿出一个task
 		pTask = free_queue_pop();
 		if (pTask == NULL)
 		{
@@ -1832,6 +1835,7 @@ static void *accept_thread_entrance(void* arg)
 		}
 
 		pClientInfo = (StorageClientInfo *)pTask->arg;
+		//将fd域填充为incomesock
 		pTask->event.fd = incomesock;
 		pClientInfo->stage = FDFS_STORAGE_STAGE_NIO_INIT;
 		pClientInfo->nio_thread_index = pTask->event.fd % g_work_threads;
@@ -1840,6 +1844,9 @@ static void *accept_thread_entrance(void* arg)
 		strcpy(pTask->client_ip, szClientIp);
 
 		task_addr = (long)pTask;
+		//通过pThreadData->thread_data.pipe_fds[1]将task传给work_thread
+        //work_thread监视着pThreadData->thread_data.pipe_fds[0]
+        //storage_recv_notify_read将被调用
 		if (write(pThreadData->thread_data.pipe_fds[1], &task_addr, \
 			sizeof(task_addr)) != sizeof(task_addr))
 		{
@@ -7075,7 +7082,7 @@ static int storage_write_to_file(struct fast_task_info *pTask, \
 			my_md5_init(&pFileContext->md5_context);
 		}
 	}
-
+	//加入压盘队列
 	if ((result=storage_dio_queue_push(pTask)) != 0)
 	{
 		return result;

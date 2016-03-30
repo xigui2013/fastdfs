@@ -296,7 +296,7 @@ int main(int argc, char *argv[])
 		}
 	}
 #endif
-	//启动定时上报线程(心跳线程)，同时可能有文件同步相关
+	//启动定时上报线程(心跳线程)，同时启动同步线程,这里的同步是状态信息同步，不是文件同步
 	if ((result=tracker_report_thread_start()) != 0)
 	{
 		logCrit("file: "__FILE__", line: %d, " \
@@ -394,7 +394,7 @@ int main(int argc, char *argv[])
 		log_destroy();
 		return result;
 	}
-
+	//压盘线程启动
 	if ((result=storage_dio_init()) != 0)
 	{
 		logCrit("exit abnormally!\n");

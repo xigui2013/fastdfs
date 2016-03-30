@@ -96,7 +96,7 @@ static int storage_sync_copy_file(ConnectionInfo *pStorageServer, \
 	int64_t total_send_bytes;
 	int result;
 	bool need_sync_file;
-
+	//trunk的先不看
 	if ((result=trunk_file_stat(pRecord->store_path_index, \
 		pRecord->true_filename, pRecord->true_filename_len, \
 		&stat_buf, &trunkInfo, &trunkHeader)) != 0)
@@ -125,6 +125,8 @@ static int storage_sync_copy_file(ConnectionInfo *pStorageServer, \
 	}
 
 	need_sync_file = true;
+	//如果上次发送文件存在，当次检查要发送的文件在对边存储是否存在
+	//如存在，且大小不一致，则修改为更新文件
 	if (pReader->last_file_exist && proto_cmd == \
 			STORAGE_PROTO_CMD_SYNC_CREATE_FILE)
 	{
@@ -182,6 +184,7 @@ static int storage_sync_copy_file(ConnectionInfo *pStorageServer, \
 
 	total_send_bytes = 0;
 	//printf("sync create file: %s\n", pRecord->filename);
+	//发送同步文件，完全无视是否发送失败
 	do
 	{
 		int64_t body_len;
@@ -216,7 +219,7 @@ static int storage_sync_copy_file(ConnectionInfo *pStorageServer, \
 		p += FDFS_GROUP_NAME_MAX_LEN;
 		memcpy(p, pRecord->filename, pRecord->filename_len);
 		p += pRecord->filename_len;
-
+		//发送文件同步文件请求
 		if((result=tcpsenddata_nb(pStorageServer->sock, out_buff, \
 			p - out_buff, g_fdfs_network_timeout)) != 0)
 		{
@@ -1020,8 +1023,9 @@ static int storage_sync_data(StorageBinLogReader *pReader, \
 
 	if (result == 0)
 	{
+		//如果同步成功了，才会增加同步行数
 		pReader->sync_row_count++;
-
+		//每500条，更新一下记录
 		if (pReader->sync_row_count - pReader->last_sync_rows >= \
 			g_write_mark_file_freq)
 		{
@@ -2603,7 +2607,7 @@ static void* storage_sync_thread_entrance(void* arg)
 	logDebug("file: "__FILE__", line: %d, " \
 		"sync thread to storage server %s:%d started", \
 		__LINE__, storage_server.ip_addr, storage_server.port);
-
+	//该线程跑到天荒地老。
 	while (g_continue_flag && \
 		pStorage->status != FDFS_STORAGE_STATUS_DELETED && \
 		pStorage->status != FDFS_STORAGE_STATUS_IP_CHANGED && \
@@ -2677,7 +2681,7 @@ static void* storage_sync_thread_entrance(void* arg)
 
 				continue;
 			}
-
+			//尝试连接目标storage
 			if ((conn_result=connectserverbyip_nb(storage_server.sock,\
 				pStorage->ip_addr, g_server_port, \
 				g_fdfs_connect_timeout)) == 0)
@@ -2751,7 +2755,7 @@ static void* storage_sync_thread_entrance(void* arg)
 			sleep(5);
 			continue;
 		}
-
+		//通过mark文件获取binlog的读取句柄
 		if ((result=storage_reader_init(pStorage, &reader)) != 0)
 		{
 			logCrit("file: "__FILE__", line: %d, " \
@@ -2814,6 +2818,7 @@ static void* storage_sync_thread_entrance(void* arg)
 		if (pStorage->status == FDFS_STORAGE_STATUS_WAIT_SYNC)
 		{
 			pStorage->status = FDFS_STORAGE_STATUS_SYNCING;
+			//发往tracker修改待同步storage状态
 			storage_report_storage_status(pStorage->id, \
 				pStorage->ip_addr, pStorage->status);
 		}
@@ -2838,40 +2843,48 @@ static void* storage_sync_thread_entrance(void* arg)
 		}
 
 		sync_result = 0;
+		/**
+		 * 同步时，对方状态只有两种
+		 * 1.新加入的storage进入syning状态
+		 * 2.正在服务的storage在active状态
+		 */
+		 //这个是一直度，读到天荒地老的意思?
 		while (g_continue_flag && (!g_sync_part_time || \
 			(current_time >= start_time && \
 			current_time <= end_time)) && \
 			(pStorage->status == FDFS_STORAGE_STATUS_ACTIVE || \
 			pStorage->status == FDFS_STORAGE_STATUS_SYNCING))
 		{
+			//读取本机binlog文件中一条记录，并处理
 			read_result = storage_binlog_read(&reader, \
 					&record, &record_len);
+			//参数name 指定的目录不存在, 或是参数name 为一空字符串。
 			if (read_result == ENOENT)
 			{
 				if (reader.need_sync_old && \
 					!reader.sync_old_done)
 				{
-				reader.sync_old_done = true;
-				if (storage_write_to_mark_file(&reader) != 0)
-				{
-					logCrit("file: "__FILE__", line: %d, " \
-						"storage_write_to_mark_file " \
-						"fail, program exit!", \
-						__LINE__);
-					g_continue_flag = false;
-					break;
-				}
+					reader.sync_old_done = true;
+					if (storage_write_to_mark_file(&reader) != 0)
+					{
+						logCrit("file: "__FILE__", line: %d, " \
+							"storage_write_to_mark_file " \
+							"fail, program exit!", \
+							__LINE__);
+						g_continue_flag = false;
+						break;
+					}
 
-				if (pStorage->status == \
-					FDFS_STORAGE_STATUS_SYNCING)
-				{
-					pStorage->status = \
-						FDFS_STORAGE_STATUS_OFFLINE;
-					storage_report_storage_status( \
-						pStorage->id, \
-						pStorage->ip_addr, \
-						pStorage->status);
-				}
+					if (pStorage->status == \
+						FDFS_STORAGE_STATUS_SYNCING)
+					{
+						pStorage->status = \
+							FDFS_STORAGE_STATUS_OFFLINE;
+						storage_report_storage_status( \
+							pStorage->id, \
+							pStorage->ip_addr, \
+							pStorage->status);
+					}
 				}
 
 
@@ -2879,11 +2892,11 @@ static void* storage_sync_thread_entrance(void* arg)
 				{
 					if (storage_write_to_mark_file(&reader)!=0)
 					{
-					logCrit("file: "__FILE__", line: %d, " \
-						"storage_write_to_mark_file fail, " \
-						"program exit!", __LINE__);
-					g_continue_flag = false;
-					break;
+						logCrit("file: "__FILE__", line: %d, " \
+							"storage_write_to_mark_file fail, " \
+							"program exit!", __LINE__);
+						g_continue_flag = false;
+						break;
 					}
 				}
 
@@ -2910,21 +2923,22 @@ static void* storage_sync_thread_entrance(void* arg)
 
 			if (read_result != 0)
 			{
-			if (read_result == EINVAL && \
-				g_file_sync_skip_invalid_record)
-			{
-				logWarning("file: "__FILE__", line: %d, " \
-					"skip invalid record, binlog index: " \
-					"%d, offset: %"PRId64, \
-					__LINE__, reader.binlog_index, \
-					reader.binlog_offset);
+				if (read_result == EINVAL && \
+					g_file_sync_skip_invalid_record)
+				{
+					logWarning("file: "__FILE__", line: %d, " \
+						"skip invalid record, binlog index: " \
+						"%d, offset: %"PRId64, \
+						__LINE__, reader.binlog_index, \
+						reader.binlog_offset);
+				}
+				else
+				{
+					sleep(5);
+					break;
+				}
 			}
-			else
-			{
-				sleep(5);
-				break;
-			}
-			}
+			//传输同步文件
 			else if ((sync_result=storage_sync_data(&reader, \
 				&storage_server, &record)) != 0)
 			{

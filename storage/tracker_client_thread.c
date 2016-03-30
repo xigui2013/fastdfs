@@ -212,7 +212,7 @@ static void *tracker_report_thread_entrance(void *arg)
 	int tracker_index;
 	int64_t last_trunk_total_free_space;
 	bool bServerPortChanged;
-
+	
 	bServerPortChanged = (g_last_server_port != 0) && \
 				(g_server_port != g_last_server_port);
 
@@ -291,7 +291,7 @@ static void *tracker_report_thread_entrance(void *arg)
 				break;
 			}
 		}
-
+		//本地地址将被返回
 		getSockIpaddr(pTrackerServer->sock, \
 				tracker_client_ip, IP_ADDRESS_SIZE);
 
@@ -339,7 +339,8 @@ static void *tracker_report_thread_entrance(void *arg)
 			__LINE__, tracker_client_ip, g_my_server_id_str);
 		//print_local_host_ip_addrs();
 		*/
-
+		//对每一个tracker服务器都进行注册本storage
+		//同时发送本机信息及配置文件中tracker信息给tracker
 		if (tracker_report_join(pTrackerServer, tracker_index, \
 					sync_old_done) != 0)
 		{
@@ -369,9 +370,10 @@ static void *tracker_report_thread_entrance(void *arg)
 				sleep(g_heart_beat_interval);
 				continue;
 			}
-
+			//标记同步是否有过同步
 			if (!g_sync_old_done)
 			{
+				//新加入的storage
 				if (tracker_sync_dest_req(pTrackerServer) == 0)
 				{
 					g_sync_old_done = true;
@@ -399,8 +401,10 @@ static void *tracker_report_thread_entrance(void *arg)
 					continue;
 				}
 			}
+			//由于对应于多服务器，多线程考虑多个应答问题
 			else
 			{
+				//通告给对应tracker,该storage是新storage
 				if (tracker_sync_notify(pTrackerServer) != 0)
 				{
 					pthread_mutex_unlock( \
@@ -422,9 +426,10 @@ static void *tracker_report_thread_entrance(void *arg)
 
 			sync_old_done = true;
 		}
-
+		//通告
 		src_storage_status[tracker_index] = \
 					tracker_sync_notify(pTrackerServer);
+		//检查是否所有tracker都通告失败,比如源storage status是deleted之类的
 		if (src_storage_status[tracker_index] != 0)
 		{
 			int k;
@@ -439,6 +444,7 @@ static void *tracker_report_thread_entrance(void *arg)
 			if (k == g_tracker_group.server_count)
 			{ //src storage server already be deleted
 				int my_status;
+				//遍历所有tracker，查询数值最大status
 				if (tracker_get_storage_max_status( \
 					&g_tracker_group, g_group_name, \
 					g_tracker_client_ip, my_server_id, \
@@ -458,7 +464,7 @@ static void *tracker_report_thread_entrance(void *arg)
 					}
 				}
 			}
-
+			//将本storage设定为offline
 			fdfs_quit(pTrackerServer);
 			sleep(g_heart_beat_interval);
 			continue;
@@ -523,23 +529,23 @@ static void *tracker_report_thread_entrance(void *arg)
 
 			if (g_if_trunker_self)
 			{
-			if (last_trunk_file_id < g_current_trunk_file_id)
-			{
-				if (tracker_report_trunk_fid(pTrackerServer)!=0)
+				if (last_trunk_file_id < g_current_trunk_file_id)
 				{
-					break;
+					if (tracker_report_trunk_fid(pTrackerServer)!=0)
+					{
+						break;
+					}
+					last_trunk_file_id = g_current_trunk_file_id;
 				}
-				last_trunk_file_id = g_current_trunk_file_id;
-			}
 
-			if (last_trunk_total_free_space != g_trunk_total_free_space)
-			{
-			if (tracker_report_trunk_free_space(pTrackerServer)!=0)
-			{
-				break;
-			}
-			last_trunk_total_free_space = g_trunk_total_free_space;
-			}
+				if (last_trunk_total_free_space != g_trunk_total_free_space)
+				{
+					if (tracker_report_trunk_free_space(pTrackerServer)!=0)
+					{
+						break;
+					}
+					last_trunk_total_free_space = g_trunk_total_free_space;
+				}
 			}
 
 			if (need_rejoin_tracker)
@@ -776,6 +782,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 	nDeletedCount = 0;
 	pDiffServer = diffServers;
 	pEnd = briefServers + server_count;
+	//遍历tracker返回的所有storage服务器
 	for (pServer=briefServers; pServer<pEnd; pServer++)
 	{
 		memcpy(&(targetServer.server),pServer,sizeof(FDFSStorageBrief));
@@ -783,11 +790,12 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 		ppFound = (FDFSStorageServer **)bsearch(&pTargetServer, \
 			g_sorted_storages, g_storage_count, \
 			sizeof(FDFSStorageServer *), storage_cmp_by_server_id);
+		//如果storage 在已有storage中存在
 		if (ppFound != NULL)
 		{
 			if (g_use_storage_id)
 			{
-			strcpy((*ppFound)->server.ip_addr, pServer->ip_addr);
+				strcpy((*ppFound)->server.ip_addr, pServer->ip_addr);
 			}
 
 			/*
@@ -838,6 +846,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 				{
 					(*ppFound)->server.status = \
 							pServer->status;
+					//开启同步线程
 					if ((result=tracker_start_sync_threads(\
 						&((*ppFound)->server))) != 0)
 					{
@@ -879,6 +888,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 		{   //ignore
 			nDeletedCount++;
 		}
+		//新增节点
 		else
 		{
 			/*
@@ -905,7 +915,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 						pInsertedServer))
 				{
 					g_storage_count++;
-
+					//开启同步线程
 					result = tracker_start_sync_threads( \
 						&(pInsertedServer->server));
 				}
@@ -946,6 +956,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 	{
 		if (pDiffServer - diffServers > 0)
 		{
+			//为什么这几个结点需要复制新的storage
 			return tracker_sync_diff_servers(pTrackerServer, \
 				diffServers, pDiffServer - diffServers);
 		}
@@ -1130,6 +1141,7 @@ static int tracker_check_response(ConnectionInfo *pTrackerServer, \
 	}
 
 	nInPackLen = buff2long(resp.pkg_len);
+	//无特殊情况，直接返回，正常情况，不会触发leader改变或者trunk改变
 	if (nInPackLen == 0)
 	{
 		return 0;
@@ -1550,7 +1562,7 @@ static int tracker_sync_dest_req(ConnectionInfo *pTrackerServer)
 			(int)sizeof(syncReqbody));
 		return EINVAL;
 	}
-
+	//返回的字段中如果有源storage及同步时间结点，表示需要同步。
 	memcpy(g_sync_src_id, syncReqbody.src_id, FDFS_STORAGE_ID_MAX_SIZE);
 	g_sync_src_id[FDFS_STORAGE_ID_MAX_SIZE - 1] = '\0';
 
@@ -2231,7 +2243,7 @@ static int tracker_heart_beat(ConnectionInfo *pTrackerServer, \
 
 	long2buff(body_len, pHeader->pkg_len);
 	pHeader->cmd = TRACKER_PROTO_CMD_STORAGE_BEAT;
-
+	//发送心跳报文
 	if((result=tcpsenddata_nb(pTrackerServer->sock, out_buff, \
 		sizeof(TrackerHeader) + body_len, g_fdfs_network_timeout)) != 0)
 	{
@@ -2448,6 +2460,7 @@ int tracker_report_thread_start()
 	memset(my_report_status, -1, sizeof(char)*g_tracker_group.server_count);
 	
 	g_tracker_reporter_count = 0;
+	//这里是在轮询所有tracker的意思?
 	pServerEnd = g_tracker_group.servers + g_tracker_group.server_count;
 	for (pTrackerServer=g_tracker_group.servers; pTrackerServer<pServerEnd; \
 		pTrackerServer++)

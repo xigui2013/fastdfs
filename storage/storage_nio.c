@@ -164,16 +164,18 @@ void storage_recv_notify_read(int sock, short event, void *arg)
 		/* //logInfo("=====thread index: %d, pTask->event.fd=%d", \
 			pClientInfo->nio_thread_index, pTask->event.fd);
 		*/
-
+		//刚从磁盘线程里出来的任务状态依然是dio_thread,去掉dio_thread状态
 		if (pClientInfo->stage & FDFS_STORAGE_STAGE_DIO_THREAD)
 		{
 			pClientInfo->stage &= ~FDFS_STORAGE_STAGE_DIO_THREAD;
 		}
 		switch (pClientInfo->stage)
 		{
+			//初始化阶段，进行数据初始化
 			case FDFS_STORAGE_STAGE_NIO_INIT:
 				result = storage_nio_init(pTask);
 				break;
+			//暂时略过，先看storage_nio_init
 			case FDFS_STORAGE_STAGE_NIO_RECV:
 				pTask->offset = 0;
 				remain_bytes = pClientInfo->total_length - \
@@ -264,7 +266,7 @@ static void client_sock_read(int sock, short event, void *arg)
 
 		return;
 	}
-
+	//超时了，删除这个task
 	if (event & IOEVENT_TIMEOUT)
 	{
 		if (pClientInfo->total_offset == 0 && pTask->req_count > 0)
@@ -287,7 +289,7 @@ static void client_sock_read(int sock, short event, void *arg)
 
 		return;
 	}
-
+	//io错误，一样删
 	if (event & IOEVENT_ERROR)
 	{
 		logDebug("file: "__FILE__", line: %d, " \
@@ -303,6 +305,7 @@ static void client_sock_read(int sock, short event, void *arg)
 		g_fdfs_network_timeout);
 	while (1)
 	{
+		//pClientInfo的total_length域为0，说明头还没接收，接收一个头
 		if (pClientInfo->total_length == 0) //recv header
 		{
 			recv_bytes = sizeof(TrackerHeader) - pTask->offset;
@@ -352,7 +355,7 @@ static void client_sock_read(int sock, short event, void *arg)
 			task_finish_clean_up(pTask);
 			return;
 		}
-
+		//用包头数据对pClientInfo进行初始化
 		if (pClientInfo->total_length == 0) //header
 		{
 			if (pTask->offset + bytes < sizeof(TrackerHeader))
@@ -376,6 +379,7 @@ static void client_sock_read(int sock, short event, void *arg)
 			}
 
 			pClientInfo->total_length += sizeof(TrackerHeader);
+			//如果需要接受的数据总长大于pTask的固定长度阀值，那么暂时只接受那么长
 			if (pClientInfo->total_length > pTask->size)
 			{
 				pTask->length = pTask->size;
@@ -387,8 +391,10 @@ static void client_sock_read(int sock, short event, void *arg)
 		}
 
 		pTask->offset += bytes;
+		//接受完了当前的包
 		if (pTask->offset >= pTask->length) //recv current pkg done
 		{
+			//这个req接受完毕，准备反馈rsp
 			if (pClientInfo->total_offset + pTask->length >= \
 					pClientInfo->total_length)
 			{
@@ -396,7 +402,7 @@ static void client_sock_read(int sock, short event, void *arg)
 				pClientInfo->stage = FDFS_STORAGE_STAGE_NIO_SEND;
 				pTask->req_count++;
 			}
-
+			//刚接受了包头，那么由storage_deal_task分发任务
 			if (pClientInfo->total_offset == 0)
 			{
 				pClientInfo->total_offset = pTask->length;
@@ -404,6 +410,7 @@ static void client_sock_read(int sock, short event, void *arg)
 			}
 			else
 			{
+				//接受的是数据包，压入磁盘线程
 				pClientInfo->total_offset += pTask->length;
 
 				/* continue write to file */

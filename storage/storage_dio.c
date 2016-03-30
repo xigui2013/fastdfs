@@ -149,10 +149,11 @@ int storage_dio_queue_push(struct fast_task_info *pTask)
 	struct storage_dio_context *pContext;
 	int result;
 
-        pClientInfo = (StorageClientInfo *)pTask->arg;
+    pClientInfo = (StorageClientInfo *)pTask->arg;
 	pFileContext = &(pClientInfo->file_context);
 	pContext = g_dio_contexts + pFileContext->dio_thread_index;
-
+	//这里为什么要或上这个呢，因为在LT模式的工作下，client_sock_read会被不断的触发
+	//pTask的数据就会被刷掉了，所以改变当前FDFS_STORAGE_STAGE_NIO_RECV的状态，让client_sock_read调用就被返回
 	pClientInfo->stage |= FDFS_STORAGE_STAGE_DIO_THREAD;
 	if ((result=blocked_queue_push(&(pContext->queue), pTask)) != 0)
 	{
@@ -733,6 +734,7 @@ static void *dio_thread_entrance(void* arg)
 	pContext = (struct storage_dio_context *)arg; 
 	while (g_continue_flag)
 	{
+		//循环取队列里的任务，执行他的deal_func
 		while ((pTask=blocked_queue_pop(&(pContext->queue))) != NULL)
 		{
 			((StorageClientInfo *)pTask->arg)->deal_func(pTask);
