@@ -424,7 +424,7 @@ static int tracker_check_and_sync(struct fast_task_info *pTask, \
 			p = (char *)pDestServer;
 		}
 	}
-
+	//如果storage的同组storage count和tracker记录的不一致，将group下所有storage信息发送给
 	if (pClientInfo->pStorage->chg_count != pClientInfo->pGroup->chg_count)
 	{
 		*pFlags |= FDFS_CHANGE_FLAG_GROUP_SERVER;

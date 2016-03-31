@@ -66,6 +66,7 @@ static int storage_do_fetch_binlog(ConnectionInfo *pSrcStorage, \
 	int result;
 
 	pBasePath = g_fdfs_store_paths.paths[store_path_index];
+	//获取恢复配置文件.binlog.recovery
 	recovery_get_binlog_filename(pBasePath, full_binlog_filename);
 
 	memset(out_buff, 0, sizeof(out_buff));
@@ -92,7 +93,7 @@ static int storage_do_fetch_binlog(ConnectionInfo *pSrcStorage, \
 	{
 		return result;
 	}
-
+	//将所有传过来的binlog记录，加入.binlog.recovery文件
 	if ((result=tcprecvfile(pSrcStorage->sock, full_binlog_filename, \
 				in_bytes, 0, g_fdfs_network_timeout, \
 				&file_bytes)) != 0)

@@ -1118,6 +1118,7 @@ static void storage_delete_fdfs_file_done_callback( \
 	storage_nio_notify(pTask);
 }
 
+//上传文件完成后的回调函数
 static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 			const int err_no)
 {
@@ -1146,6 +1147,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 
 	if (result == 0)
 	{
+		 //检查文件是否写重复,然后在修改文件名
 		result = storage_service_upload_file_done(pTask);
 		if (result == 0)
 		{
@@ -1163,7 +1165,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 	{
 		int filename_len;
 		char *p;
-
+		//将total_upload_count,success_upload_count自增加
 		if (pFileContext->create_flag & STORAGE_CREATE_FLAG_FILE)
 		{
 			CHECK_AND_WRITE_TO_STAT_FILE3_WITH_BYTES( \
@@ -1174,8 +1176,9 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 				g_storage_stat.success_upload_bytes, \
 				pFileContext->end - pFileContext->start)
 		}
-
+		//组返回包,返回组名,文件名
 		filename_len = strlen(pFileContext->fname2log);
+		//重新设置了返回包的总长度
 		pClientInfo->total_length = sizeof(TrackerHeader) + \
 					FDFS_GROUP_NAME_MAX_LEN + filename_len;
 		p = pTask->data + sizeof(TrackerHeader);
@@ -1189,6 +1192,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 		pthread_mutex_lock(&stat_count_thread_lock);
 		if (pFileContext->create_flag & STORAGE_CREATE_FLAG_FILE)
 		{
+			//否则如果上传失败,上传总数加
 			g_storage_stat.total_upload_count++;
  			g_storage_stat.total_upload_bytes += \
 				pClientInfo->total_offset;
@@ -1199,7 +1203,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 	}
 
 	STORAGE_ACCESS_LOG(pTask, ACCESS_LOG_ACTION_UPLOAD_FILE, result);
-
+	//total_offset被重新设置为
 	pClientInfo->total_offset = 0;
 	pTask->length = pClientInfo->total_length;
 
@@ -1211,6 +1215,9 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 
 	//又看到熟悉的函数了，这完成以后将pTask从磁盘线程压入work线程
     //work线程调用storage_recv_notify_read函数来做下一步处理
+
+	//在次触发事件void storage_recv_notify_read()而在接收最后一个包时pClientInfo->stage = FDFS_STORAGE_STAGE_NIO_SEND
+    //已经更改了这个状态值,因此在该函数里面,直接去调用storage_send_add_event(pTask)函数,发送响应包
 	storage_nio_notify(pTask);
 }
 
@@ -1566,6 +1573,7 @@ static void storage_set_metadata_done_callback( \
 	storage_nio_notify(pTask);
 }
 
+//数据服务器服务初始化
 int storage_service_init()
 {
 #define ALLOC_CONNECTIONS_ONCE 256
@@ -1603,6 +1611,8 @@ int storage_service_init()
     init_connections = g_max_connections < ALLOC_CONNECTIONS_ONCE ?
         g_max_connections : ALLOC_CONNECTIONS_ONCE;
 	//建立任务task对象池，复用task类型
+	//StorageClientInfo参数所以说在任务Task结构里面用void * 参数来代替
+    //g_buff_size缺省是64K
 	if ((result=free_queue_init_ex(g_max_connections, init_connections,
                     ALLOC_CONNECTIONS_ONCE, g_buff_size,
                     g_buff_size, sizeof(StorageClientInfo))) != 0)
@@ -1611,6 +1621,9 @@ int storage_service_init()
 	}
 
 	bytes = sizeof(struct storage_nio_thread_data) * g_work_threads;
+
+	//分配工作线程空间
+    //需要注意的是socket工作线程跟磁盘io线程的是分开的
 	g_nio_thread_data = (struct storage_nio_thread_data *)malloc(bytes);
 	if (g_nio_thread_data == NULL)
 	{
@@ -1800,7 +1813,7 @@ static void *accept_thread_entrance(void* arg)
 
 			continue;
 		}
-
+		//判断是否允许在可连接的地址列表里面
 		client_addr = getPeerIpaddr(incomesock, \
 				szClientIp, IP_ADDRESS_SIZE);
 		if (g_allow_ip_count >= 0)
@@ -1838,6 +1851,7 @@ static void *accept_thread_entrance(void* arg)
 		//将fd域填充为incomesock
 		pTask->event.fd = incomesock;
 		pClientInfo->stage = FDFS_STORAGE_STAGE_NIO_INIT;
+		//工作线程取余数:一个nio,一个dio
 		pClientInfo->nio_thread_index = pTask->event.fd % g_work_threads;
 		pThreadData = g_nio_thread_data + pClientInfo->nio_thread_index;
 
@@ -1871,6 +1885,25 @@ static void *accept_thread_entrance(void* arg)
 
 	return NULL;
 }
+
+//数据服务器作为客户端监听socket请求
+
+//具体的实现流程是:
+
+//1.创建工作线程,每个在工作线程里面,绑定socket读写事件
+
+//2.数据服务器服务端监听客户端请求,接收到请求后,从任务队列表取一个任务(从头部取),然后
+
+//  pClientInfo->stage = FDFS_STORAGE_STAGE_NIO_INIT;
+
+//  pClientInfo->nio_thread_index = pClientInfo->sock % g_work_threads;//工作线程取余数
+
+//  pThreadData = g_nio_thread_data + pClientInfo->nio_thread_index;   //确定是哪一个工作线程
+
+//  write(pThreadData->pipe_fds[1], &task_addr, sizeof(task_addr))     //向那一个工作线程写入事件(其实是写的任务)
+
+//3.然后触发socket读的事件,注意读的也是Task任务
+
 
 void storage_accept_loop(int server_sock)
 {
@@ -1916,6 +1949,7 @@ void storage_nio_notify(struct fast_task_info *pTask)
 	long task_addr;
 
 	pClientInfo = (StorageClientInfo *)pTask->arg;
+	//去取工作线程,在写入客户端socket
 	pThreadData = g_nio_thread_data + pClientInfo->nio_thread_index;
 
 	task_addr = (long)pTask;
@@ -1932,12 +1966,14 @@ void storage_nio_notify(struct fast_task_info *pTask)
 	}
 }
 
+//工作线程入口
 static void *work_thread_entrance(void* arg)
 {
 	int result;
 	struct storage_nio_thread_data *pThreadData;
 
 	pThreadData = (struct storage_nio_thread_data *)arg;
+	//暂时先不考虑是否检查文件是否重复
 	if (g_check_file_duplicate)
 	{
 		if ((result=fdht_copy_group_array(&(pThreadData->group_array),\
@@ -4070,6 +4106,7 @@ static int storage_server_fetch_one_path_binlog_dealer( \
 
 	do
 	{
+		//获取一条记录
 		result = storage_binlog_read(pReader, &record, &record_len);
 		if (result == ENOENT)  //no binlog record
 		{
@@ -4094,79 +4131,79 @@ static int storage_server_fetch_one_path_binlog_dealer( \
 		{
 			continue;
 		}
-
+		//trunk的先不看
 		if (fdfs_is_trunk_file(record.filename, record.filename_len))
 		{
-		if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_LINK)
-		{
-			record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
-		}
-		else if (record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_LINK)
-		{
-			record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_FILE;
-		}
-		}
-		else
-		{
-		snprintf(full_filename, sizeof(full_filename), "%s/data/%s", \
-			g_fdfs_store_paths.paths[record.store_path_index], \
-			record.true_filename);
-		if (lstat(full_filename, &stat_buf) != 0)
-		{
-			if (errno == ENOENT)
-			{
-				continue;
-			}
-			else
-			{
-				logError("file: "__FILE__", line: %d, " \
-					"call stat fail, file: %s, "\
-					"error no: %d, error info: %s", \
-					__LINE__, full_filename, \
-					errno, STRERROR(errno));
-				result = errno != 0 ? errno : EPERM;
-				break;
-			}
-		}
-
-		if (S_ISLNK(stat_buf.st_mode))
-		{
-			if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_FILE
-		 	|| record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_FILE)
-			{
-				logWarning("file: "__FILE__", line: %d, " \
-					"regular file %s change to symbol " \
-					"link file, some mistake happen?", \
-					__LINE__, full_filename);
-			if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_FILE)
-			{
-			record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_LINK;
-			}
-			else
-			{
-			record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_LINK;
-			}
-			}
-		}
-		else
-		{
-			if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_LINK 
-		 	|| record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_LINK)
-			{
-				logWarning("file: "__FILE__", line: %d, " \
-					"symbol link file %s change to " \
-					"regular file, some mistake happen?", \
-					__LINE__, full_filename);
 			if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_LINK)
 			{
-			record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
+				record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
+			}
+			else if (record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_LINK)
+			{
+				record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_FILE;
+			}
+		}
+		else
+		{
+			snprintf(full_filename, sizeof(full_filename), "%s/data/%s", \
+				g_fdfs_store_paths.paths[record.store_path_index], \
+				record.true_filename);
+			if (lstat(full_filename, &stat_buf) != 0)
+			{
+				if (errno == ENOENT)
+				{
+					continue;
+				}
+				else
+				{
+					logError("file: "__FILE__", line: %d, " \
+						"call stat fail, file: %s, "\
+						"error no: %d, error info: %s", \
+						__LINE__, full_filename, \
+						errno, STRERROR(errno));
+					result = errno != 0 ? errno : EPERM;
+					break;
+				}
+			}
+			//是否是一个连接
+			if (S_ISLNK(stat_buf.st_mode))
+			{
+				if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_FILE
+			 	|| record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_FILE)
+				{
+					logWarning("file: "__FILE__", line: %d, " \
+						"regular file %s change to symbol " \
+						"link file, some mistake happen?", \
+						__LINE__, full_filename);
+				if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_FILE)
+				{
+					record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_LINK;
+					}
+					else
+					{
+					record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_LINK;
+					}
+				}
 			}
 			else
 			{
-			record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_FILE;
+				if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_LINK 
+			 	|| record.op_type == STORAGE_OP_TYPE_REPLICA_CREATE_LINK)
+				{
+					logWarning("file: "__FILE__", line: %d, " \
+						"symbol link file %s change to " \
+						"regular file, some mistake happen?", \
+						__LINE__, full_filename);
+					if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_LINK)
+					{
+						record.op_type = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
+					}
+					else
+					{
+						record.op_type = STORAGE_OP_TYPE_REPLICA_CREATE_FILE;
+					}
+				}
 			}
-			}
-		}
 		}
 
 		if (record.op_type == STORAGE_OP_TYPE_SOURCE_CREATE_FILE
@@ -4304,7 +4341,7 @@ static int storage_server_do_fetch_one_path_binlog( \
         free(pReader);
 		return result;
 	}
-
+	//获取一个C 或c的文件binlog记录
 	pClientInfo->deal_func = storage_server_fetch_one_path_binlog_dealer;
 	pClientInfo->clean_func = fetch_one_path_binlog_finish_clean_up;
 
@@ -4391,6 +4428,8 @@ static int storage_server_fetch_one_path_binlog(struct fast_task_info *pTask)
 FDFS_FILE_EXT_NAME_MAX_LEN bytes: file ext name, do not include dot (.)
 file size bytes: file content
 **/
+	//发送的时候,先发送包头,接收的时候也是这样,在发包体,服务端也在次来接收包体
+
 static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 {
 	StorageClientInfo *pClientInfo;
@@ -4426,6 +4465,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 	}
 
 	p = pTask->data + sizeof(TrackerHeader);
+	//首先取目录存储路径索引下标
 	store_path_index = *p++;
 
 	if (store_path_index == -1)
@@ -4452,6 +4492,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 	}
 	
 	//获取文件大小
+	//再取文件长度(注释是整个的长度)
 	file_bytes = buff2long(p);
 	p += FDFS_PROTO_PKG_LEN_SIZE;
 	//文件大小检查
@@ -5485,18 +5526,18 @@ static int storage_sync_copy_file(struct fast_task_info *pTask, \
 	have_file_content = ((TrackerHeader *)pTask->data)->status == 0;
 	if (have_file_content)
 	{
-	if (file_bytes != nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
-			4 + FDFS_GROUP_NAME_MAX_LEN + filename_len))
-	{
-		logError("file: "__FILE__", line: %d, " \
-			"client ip: %s, in request pkg, " \
-			"file size: %"PRId64 \
-			" != remain bytes: %"PRId64"", \
-			__LINE__, pTask->client_ip, file_bytes, \
-			nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
-			FDFS_GROUP_NAME_MAX_LEN + filename_len));
-		return EINVAL;
-	}
+		if (file_bytes != nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
+				4 + FDFS_GROUP_NAME_MAX_LEN + filename_len))
+		{
+			logError("file: "__FILE__", line: %d, " \
+				"client ip: %s, in request pkg, " \
+				"file size: %"PRId64 \
+				" != remain bytes: %"PRId64"", \
+				__LINE__, pTask->client_ip, file_bytes, \
+				nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
+				FDFS_GROUP_NAME_MAX_LEN + filename_len));
+			return EINVAL;
+		}
 	}
 	else
 	{
@@ -5607,89 +5648,89 @@ static int storage_sync_copy_file(struct fast_task_info *pTask, \
 
 	if (pFileContext->op == FDFS_STORAGE_FILE_OP_WRITE)
 	{
-	if (pFileContext->extra_info.upload.file_type & _FILE_TYPE_TRUNK)
-	{
-		pFileContext->crc32 = trunkHeader.crc32;
-		pFileContext->extra_info.upload.start_time = trunkHeader.mtime;
-       		snprintf(pFileContext->extra_info.upload.formatted_ext_name, \
-		sizeof(pFileContext->extra_info.upload.formatted_ext_name), 
-			"%s", trunkHeader.formatted_ext_name);
-
-		clean_func = dio_trunk_write_finish_clean_up;
-		file_offset = TRUNK_FILE_START_OFFSET(pFileContext-> \
-					extra_info.upload.trunk_info);
-		trunk_get_full_filename(&pFileContext-> \
-			extra_info.upload.trunk_info, pFileContext->filename, \
-			sizeof(pFileContext->filename));
-		pFileContext->extra_info.upload.before_open_callback = \
-					dio_check_trunk_file_when_sync;
-		pFileContext->extra_info.upload.before_close_callback = \
-					dio_write_chunk_header;
-		pFileContext->open_flags = O_RDWR | g_extra_open_file_flags;
-	}
-	else
-	{
-		#define MKTEMP_MAX_COUNT  10
-		int i;
-		struct stat stat_buf;
-
-		for (i=0; i < MKTEMP_MAX_COUNT; i++)
+		if (pFileContext->extra_info.upload.file_type & _FILE_TYPE_TRUNK)
 		{
-			pthread_mutex_lock(&g_storage_thread_lock);
+			pFileContext->crc32 = trunkHeader.crc32;
+			pFileContext->extra_info.upload.start_time = trunkHeader.mtime;
+	       		snprintf(pFileContext->extra_info.upload.formatted_ext_name, \
+			sizeof(pFileContext->extra_info.upload.formatted_ext_name), 
+				"%s", trunkHeader.formatted_ext_name);
 
-			sprintf(pFileContext->filename, "%s/data/.cp" \
-				"%"PRId64".tmp", \
-				g_fdfs_store_paths.paths[store_path_index], \
-				temp_file_sequence++);
+			clean_func = dio_trunk_write_finish_clean_up;
+			file_offset = TRUNK_FILE_START_OFFSET(pFileContext-> \
+						extra_info.upload.trunk_info);
+			trunk_get_full_filename(&pFileContext-> \
+				extra_info.upload.trunk_info, pFileContext->filename, \
+				sizeof(pFileContext->filename));
+			pFileContext->extra_info.upload.before_open_callback = \
+						dio_check_trunk_file_when_sync;
+			pFileContext->extra_info.upload.before_close_callback = \
+						dio_write_chunk_header;
+			pFileContext->open_flags = O_RDWR | g_extra_open_file_flags;
+		}
+		else
+		{
+			#define MKTEMP_MAX_COUNT  10
+			int i;
+			struct stat stat_buf;
 
-			pthread_mutex_unlock(&g_storage_thread_lock);
-
-			if (stat(pFileContext->filename, &stat_buf) == 0)
+			for (i=0; i < MKTEMP_MAX_COUNT; i++)
 			{
-				if (g_current_time - stat_buf.st_mtime > 600)
+				pthread_mutex_lock(&g_storage_thread_lock);
+
+				sprintf(pFileContext->filename, "%s/data/.cp" \
+					"%"PRId64".tmp", \
+					g_fdfs_store_paths.paths[store_path_index], \
+					temp_file_sequence++);
+
+				pthread_mutex_unlock(&g_storage_thread_lock);
+
+				if (stat(pFileContext->filename, &stat_buf) == 0)
 				{
-					if (unlink(pFileContext->filename) != 0
-						&& errno != ENOENT)
+					if (g_current_time - stat_buf.st_mtime > 600)
 					{
-					logWarning("file: "__FILE__", line: %d"\
-					", client ip: %s, unlink temp file %s "\
-					" fail, errno: %d, error info: %s", \
-					__LINE__, pTask->client_ip, \
-					pFileContext->filename, \
-					errno, STRERROR(errno));
+						if (unlink(pFileContext->filename) != 0
+							&& errno != ENOENT)
+						{
+						logWarning("file: "__FILE__", line: %d"\
+						", client ip: %s, unlink temp file %s "\
+						" fail, errno: %d, error info: %s", \
+						__LINE__, pTask->client_ip, \
+						pFileContext->filename, \
+						errno, STRERROR(errno));
+						continue;
+						}
+					}
+					else
+					{
+					logWarning("file: "__FILE__", line: %d, " \
+						"client ip: %s, temp file %s already "\
+						"exists", __LINE__, pTask->client_ip, \
+						pFileContext->filename);
 					continue;
 					}
 				}
-				else
-				{
-				logWarning("file: "__FILE__", line: %d, " \
-					"client ip: %s, temp file %s already "\
-					"exists", __LINE__, pTask->client_ip, \
-					pFileContext->filename);
-				continue;
-				}
+
+				break;
 			}
 
-			break;
+			if (i == MKTEMP_MAX_COUNT)
+			{
+				logError("file: "__FILE__", line: %d, " \
+					"client ip: %s, make temp file fail", \
+					__LINE__, pTask->client_ip);
+				return EAGAIN;
+			}
+
+			clean_func = dio_write_finish_clean_up;
+			file_offset = 0;
+			pFileContext->extra_info.upload.before_open_callback = NULL;
+			pFileContext->extra_info.upload.before_close_callback = NULL;
+			pFileContext->open_flags = O_WRONLY | O_CREAT | O_TRUNC \
+							| g_extra_open_file_flags;
 		}
 
-		if (i == MKTEMP_MAX_COUNT)
-		{
-			logError("file: "__FILE__", line: %d, " \
-				"client ip: %s, make temp file fail", \
-				__LINE__, pTask->client_ip);
-			return EAGAIN;
-		}
-
-		clean_func = dio_write_finish_clean_up;
-		file_offset = 0;
-		pFileContext->extra_info.upload.before_open_callback = NULL;
-		pFileContext->extra_info.upload.before_close_callback = NULL;
-		pFileContext->open_flags = O_WRONLY | O_CREAT | O_TRUNC \
-						| g_extra_open_file_flags;
-	}
-
-		deal_func = dio_write_file;
+			deal_func = dio_write_file;
 	}
 	else
 	{
@@ -6796,6 +6837,8 @@ Header
 FDFS_GROUP_NAME_MAX_LEN bytes: group_name
 filename
 **/
+
+//从数据服务器上下载文件
 static int storage_server_download_file(struct fast_task_info *pTask)
 {
 	StorageClientInfo *pClientInfo;
@@ -6817,7 +6860,9 @@ static int storage_server_download_file(struct fast_task_info *pTask)
 
 	pClientInfo = (StorageClientInfo *)pTask->arg;
 	pFileContext =  &(pClientInfo->file_context);
+	//实际上在接收包的过程中,设置了pClientInfo->total_length=pClientInfo->total_length+sizeof(TrackerHeader)
 
+    //因此这里在重新减回去
 	nInPackLen = pClientInfo->total_length - sizeof(TrackerHeader);
 	if (nInPackLen <= 16 + FDFS_GROUP_NAME_MAX_LEN)
 	{
@@ -6842,11 +6887,12 @@ static int storage_server_download_file(struct fast_task_info *pTask)
 			nInPackLen, pTask->size);
 		return EINVAL;
 	}
-
+	
 	p = pTask->data + sizeof(TrackerHeader);
-
+	//文件偏移量:下载传来的请求包里面值是
 	file_offset = buff2long(p);
 	p += FDFS_PROTO_PKG_LEN_SIZE;
+	//需要下载的字节数
 	download_bytes = buff2long(p);
 	p += FDFS_PROTO_PKG_LEN_SIZE;
 	if (file_offset < 0)
@@ -6885,7 +6931,8 @@ static int storage_server_download_file(struct fast_task_info *pTask)
 
 	STORAGE_ACCESS_STRCPY_FNAME2LOG(filename, filename_len, \
 			pClientInfo);
-
+	
+	//拆分文件名,确定store_path_index磁盘目录索引值
 	if ((result=storage_split_filename_ex(filename, \
 		&filename_len, true_filename, &store_path_index)) != 0)
 	{
@@ -6932,6 +6979,9 @@ static int storage_server_download_file(struct fast_task_info *pTask)
 		g_storage_stat.success_file_open_count++;
 		pthread_mutex_unlock(&stat_count_thread_lock);
 	}
+	//请求下载文件发来的包里面,下载字节数填写的是download_bytes=0,那么下载的字节数就是文件本身的字节大小
+	
+	//并且文件偏移量file_offset=0
 
 	if (download_bytes == 0)
 	{
@@ -6995,6 +7045,7 @@ static int storage_do_delete_file(struct fast_task_info *pTask, \
 	return STORAGE_STATUE_DEAL_FILE;
 }
 
+//从数据服务器读取文件
 static int storage_read_from_file(struct fast_task_info *pTask, \
 		const int64_t file_offset, const int64_t download_bytes, \
 		FileDealDoneCallback done_callback, \
@@ -7010,6 +7061,7 @@ static int storage_read_from_file(struct fast_task_info *pTask, \
 
 	pClientInfo->deal_func = dio_read_file;
 	pClientInfo->clean_func = dio_read_finish_clean_up;
+	//在这里重新设置总的长度
 	pClientInfo->total_length = sizeof(TrackerHeader) + download_bytes;
 	pClientInfo->total_offset = 0;
 
@@ -7018,16 +7070,21 @@ static int storage_read_from_file(struct fast_task_info *pTask, \
 	pFileContext->offset = file_offset;
 	pFileContext->start = file_offset;
 	pFileContext->end = file_offset + download_bytes;
+	//获得磁盘ip读写的线程索引下标,从而确定是由哪个线程取进行读写的操作
 	pFileContext->dio_thread_index = storage_dio_get_thread_index( \
 		pTask, store_path_index, pFileContext->op);
 	pFileContext->done_callback = done_callback;
-
+	//任务的数据长度重新进行了设置
 	pTask->length = sizeof(TrackerHeader);
 
 	pHeader = (TrackerHeader *)pTask->data;
 	pHeader->status = 0;
 	pHeader->cmd = STORAGE_PROTO_CMD_RESP;
 	long2buff(download_bytes, pHeader->pkg_len);
+
+	//这里连同包头+单片数据文件的包体一起进行了如磁盘线程的处理队列中
+	
+	//客户端在接收时可以先指定接收包头,然后在接收后面的包体数据
 
 	if ((result=storage_dio_queue_push(pTask)) != 0)
 	{
@@ -7041,6 +7098,7 @@ static int storage_read_from_file(struct fast_task_info *pTask, \
 	return STORAGE_STATUE_DEAL_FILE;
 }
 
+//数据服务器处理写文件
 static int storage_write_to_file(struct fast_task_info *pTask, \
 		const int64_t file_offset, const int64_t upload_bytes, \
 		const int buff_offset, TaskDealFunc deal_func, \
@@ -7053,7 +7111,7 @@ static int storage_write_to_file(struct fast_task_info *pTask, \
 
 	pClientInfo = (StorageClientInfo *)pTask->arg;
 	pFileContext =  &(pClientInfo->file_context);
-
+	//处理任务函数指针
 	pClientInfo->deal_func = deal_func;
 	pClientInfo->clean_func = clean_func;
 
@@ -7062,8 +7120,10 @@ static int storage_write_to_file(struct fast_task_info *pTask, \
 	pFileContext->offset = file_offset;
 	pFileContext->start = file_offset;
 	pFileContext->end = file_offset + upload_bytes;
+	//获得磁盘读写的线程
 	pFileContext->dio_thread_index = storage_dio_get_thread_index( \
 		pTask, store_path_index, pFileContext->op);
+	//处理完成的回调函数
 	pFileContext->done_callback = done_callback;
 
 	if (pFileContext->calc_crc32)
@@ -7083,6 +7143,7 @@ static int storage_write_to_file(struct fast_task_info *pTask, \
 		}
 	}
 	//加入压盘队列
+	//插入到磁盘处理队列中,而磁盘处理线程调用dio_thread_entrance()不断来处理队列里面的任务元素
 	if ((result=storage_dio_queue_push(pTask)) != 0)
 	{
 		return result;

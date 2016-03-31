@@ -60,7 +60,7 @@
 #define FDFS_STORAGE_STATUS_ONLINE	  6
 #define FDFS_STORAGE_STATUS_ACTIVE	  7
 #define FDFS_STORAGE_STATUS_RECOVERY	  9
-#define FDFS_STORAGE_STATUS_NONE	 99
+#define FDFS_STORAGE_STATUS_NONE	 99    //未知状态
 
 //which group to upload file
 #define FDFS_STORE_LOOKUP_ROUND_ROBIN	0  //round robin
@@ -104,6 +104,7 @@
 
 #define FDFS_CHANGE_FLAG_TRACKER_LEADER	1  //tracker leader changed
 #define FDFS_CHANGE_FLAG_TRUNK_SERVER	2  //trunk server changed
+//同组内group的storage数不一致
 #define FDFS_CHANGE_FLAG_GROUP_SERVER	4  //group server changed
 
 #define IS_APPENDER_FILE(file_size)   ((file_size & FDFS_APPENDER_FILE_SIZE)!=0)

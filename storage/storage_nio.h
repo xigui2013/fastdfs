@@ -29,6 +29,7 @@
 #define FDFS_STORAGE_STAGE_NIO_CLOSE  4  //close socket
 #define FDFS_STORAGE_STAGE_DIO_THREAD 8  
 
+//标记线程的状态，默认读写线程是分开的
 #define FDFS_STORAGE_FILE_OP_READ     'R'
 #define FDFS_STORAGE_FILE_OP_WRITE    'W'
 #define FDFS_STORAGE_FILE_OP_APPEND   'A'

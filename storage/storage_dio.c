@@ -35,7 +35,8 @@ static struct storage_dio_context *g_dio_contexts = NULL;
 int g_dio_thread_count = 0;
 
 static void *dio_thread_entrance(void* arg);
- 
+
+//数据服务器io初始化 
 int storage_dio_init()
 {
 	int result;
@@ -60,7 +61,9 @@ int storage_dio_init()
 			"init_pthread_attr fail, program exit!", __LINE__);
 		return result;
 	}
+	//g_path_count:数据服务器挂载目录个数
 
+    //存放文件时storage server支持多个路径（例如磁盘）。这里配置存放文件的基路径数目，通常只配一个目录
 	bytes = sizeof(struct storage_dio_thread_data) * g_fdfs_store_paths.count;
 	g_dio_thread_data = (struct storage_dio_thread_data *)malloc(bytes);
 	if (g_dio_thread_data == NULL)
@@ -71,8 +74,9 @@ int storage_dio_init()
 		return errno != 0 ? errno : ENOMEM;
 	}
 	memset(g_dio_thread_data, 0, bytes);
-
+	//每个path线程个数=磁盘读线程数+磁盘写线程数
 	threads_count_per_path = g_disk_reader_threads + g_disk_writer_threads;
+	//上下文个数
 	context_count = threads_count_per_path * g_fdfs_store_paths.count;
 	bytes = sizeof(struct storage_dio_context) * context_count;
 	g_dio_contexts = (struct storage_dio_context *)malloc(bytes);
@@ -87,9 +91,11 @@ int storage_dio_init()
 	memset(g_dio_contexts, 0, bytes);
 
 	g_dio_thread_count = 0;
+	//分配到每个store path
 	pDataEnd = g_dio_thread_data + g_fdfs_store_paths.count;
 	for (pThreadData=g_dio_thread_data; pThreadData<pDataEnd; pThreadData++)
 	{
+		//每个store path的读写线程
 		pThreadData->count = threads_count_per_path;
 		pThreadData->contexts = g_dio_contexts + (pThreadData - \
 				g_dio_thread_data) * threads_count_per_path;
@@ -144,17 +150,20 @@ void storage_dio_terminate()
 
 int storage_dio_queue_push(struct fast_task_info *pTask)
 {
-        StorageClientInfo *pClientInfo;
+    StorageClientInfo *pClientInfo;
 	StorageFileContext *pFileContext;
 	struct storage_dio_context *pContext;
 	int result;
-
+	
+	//获得文件上下文
     pClientInfo = (StorageClientInfo *)pTask->arg;
 	pFileContext = &(pClientInfo->file_context);
+	//获得文件上下文的磁盘io的读写线程,pFileContext->dio_thread_index:已经在storage_write_to_file()函数里面进行了赋值
 	pContext = g_dio_contexts + pFileContext->dio_thread_index;
 	//这里为什么要或上这个呢，因为在LT模式的工作下，client_sock_read会被不断的触发
 	//pTask的数据就会被刷掉了，所以改变当前FDFS_STORAGE_STAGE_NIO_RECV的状态，让client_sock_read调用就被返回
 	pClientInfo->stage |= FDFS_STORAGE_STAGE_DIO_THREAD;
+	//将任务加入到这个线程里面的队列尾部
 	if ((result=blocked_queue_push(&(pContext->queue), pTask)) != 0)
 	{
 		add_to_deleted_list(pTask);
@@ -164,6 +173,7 @@ int storage_dio_queue_push(struct fast_task_info *pTask)
 	return 0;
 }
 
+/*获得读或者写的线程下标*/
 int storage_dio_get_thread_index(struct fast_task_info *pTask, \
 		const int store_path_index, const char file_op)
 {
@@ -171,8 +181,9 @@ int storage_dio_get_thread_index(struct fast_task_info *pTask, \
 	struct storage_dio_context *contexts;
 	struct storage_dio_context *pContext;
 	int count;
-
+	//首先确定是哪一个目录的线程数据
 	pThreadData = g_dio_thread_data + store_path_index;
+	//如果将读写线程分开
 	if (g_disk_rw_separated)
 	{
 		if (file_op == FDFS_STORAGE_FILE_OP_READ)
@@ -191,8 +202,10 @@ int storage_dio_get_thread_index(struct fast_task_info *pTask, \
 		contexts = pThreadData->contexts;
 		count = pThreadData->count;
 	}
+	//随机选取其中一个线程来做
 
 	pContext = contexts + (((unsigned int)pTask->event.fd) % count);
+	//获得这个线程在线程数组里面的下标
 	return pContext - g_dio_contexts;
 }
 

@@ -192,6 +192,7 @@ static int tracker_rename_mark_files(const char *old_ip_addr, \
 	return result;
 }
 
+//与跟踪服务器的报告线程
 static void *tracker_report_thread_entrance(void *arg)
 {
 	ConnectionInfo *pTrackerServer;
@@ -212,19 +213,21 @@ static void *tracker_report_thread_entrance(void *arg)
 	int tracker_index;
 	int64_t last_trunk_total_free_space;
 	bool bServerPortChanged;
-	
+	//判断数据服务器的端口是否改变
 	bServerPortChanged = (g_last_server_port != 0) && \
 				(g_server_port != g_last_server_port);
 
 	pTrackerServer = (ConnectionInfo *)arg;
 	pTrackerServer->sock = -1;
+	//获得跟踪的下标
 	tracker_index = pTrackerServer - g_tracker_group.servers;
 
 	logDebug("file: "__FILE__", line: %d, " \
 		"report thread to tracker server %s:%d started", \
 		__LINE__, pTrackerServer->ip_addr, pTrackerServer->port);
-
+	//初始时g_sync_old_done=false
 	sync_old_done = g_sync_old_done;
+	//需要等待所有跟各个跟踪服务器的线程都启动,在去执行
 	while (g_continue_flag &&  \
 		g_tracker_reporter_count < g_tracker_group.server_count)
 	{
@@ -238,6 +241,7 @@ static void *tracker_report_thread_entrance(void *arg)
 	{
 		if (pTrackerServer->sock >= 0)
 		{
+			//每次关闭,又重新进行连接
 			close(pTrackerServer->sock);
 		}
 		pTrackerServer->sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -255,16 +259,17 @@ static void *tracker_report_thread_entrance(void *arg)
 		{
 			socketBind(pTrackerServer->sock, g_bind_addr, 0);
 		}
-
+		//设置连接到跟踪服务器的网络超时时间,连接超时时间
 		tcpsetserveropt(pTrackerServer->sock, g_fdfs_network_timeout);
 
 		if (tcpsetnonblockopt(pTrackerServer->sock) != 0)
 		{
 			nContinuousFail++;
+			//延时心跳间隔
 			sleep(g_heart_beat_interval);
 			continue;
 		}
-
+		//连接到跟踪服务器
 		if ((result=connectserverbyip_nb(pTrackerServer->sock, \
 			pTrackerServer->ip_addr, \
 			pTrackerServer->port, g_fdfs_connect_timeout)) != 0)
@@ -312,7 +317,7 @@ static void *tracker_report_thread_entrance(void *arg)
 
 		previousCode = 0;
 		nContinuousFail = 0;
-
+		//初始g_tracker_client_ip为空串
 		if (*g_tracker_client_ip == '\0')
 		{
 			strcpy(g_tracker_client_ip, tracker_client_ip);
@@ -330,7 +335,9 @@ static void *tracker_report_thread_entrance(void *arg)
 			pTrackerServer->sock = -1;
 			break;
 		}
+		//因为要连接多个跟踪服务器,每连接一个都会产生一个tracker_client_ip
 
+        //因此插入这个g_local_host_ip_addrs 大串里面
 		insert_into_local_host_ip(tracker_client_ip);
 
 		/*
@@ -341,6 +348,7 @@ static void *tracker_report_thread_entrance(void *arg)
 		*/
 		//对每一个tracker服务器都进行注册本storage
 		//同时发送本机信息及配置文件中tracker信息给tracker
+		//向每一个跟踪服务器发起加入的请求
 		if (tracker_report_join(pTrackerServer, tracker_index, \
 					sync_old_done) != 0)
 		{
@@ -355,7 +363,7 @@ static void *tracker_report_thread_entrance(void *arg)
 			{
 			}
 		}
-
+		//初始g_sync_old_done=false,如果旧的同步操作没有完成
 		if (!sync_old_done)
 		{
 			if ((result=pthread_mutex_lock(&reporter_thread_lock)) \
@@ -374,9 +382,13 @@ static void *tracker_report_thread_entrance(void *arg)
 			if (!g_sync_old_done)
 			{
 				//新加入的storage
+				//获得向该storage server同步已有数据文件的源服务器请求
 				if (tracker_sync_dest_req(pTrackerServer) == 0)
 				{
 					g_sync_old_done = true;
+					//获得源服务器请求完成后,旧的同步设为标记true
+
+                    //在写入同步状态的文件中
 					if (storage_write_to_sync_ini_file() \
 						!= 0)
 					{
@@ -397,11 +409,13 @@ static void *tracker_report_thread_entrance(void *arg)
 						&reporter_thread_lock);
 
 					fdfs_quit(pTrackerServer);
+					//心跳连接时间
 					sleep(g_heart_beat_interval);
 					continue;
 				}
 			}
 			//由于对应于多服务器，多线程考虑多个应答问题
+			//如果已经获得了源数据服务器,那么这里向发出跟踪服务器发起同步的请求
 			else
 			{
 				//通告给对应tracker,该storage是新storage
@@ -423,10 +437,10 @@ static void *tracker_report_thread_entrance(void *arg)
 					"errno: %d, error info: %s", \
 					__LINE__, result, STRERROR(result));
 			}
-
+			//旧的同步设为标记true
 			sync_old_done = true;
 		}
-		//通告
+		////获得源数据服务器的状态
 		src_storage_status[tracker_index] = \
 					tracker_sync_notify(pTrackerServer);
 		//检查是否所有tracker都通告失败,比如源storage status是deleted之类的
@@ -481,9 +495,11 @@ static void *tracker_report_thread_entrance(void *arg)
 		while (g_continue_flag)
 		{
 			current_time = g_current_time;
+			//比较心跳的时间间隔
 			if (current_time - last_beat_time >= \
 					g_heart_beat_interval)
 			{
+				//发送心跳
 				if (tracker_heart_beat(pTrackerServer, \
 					&stat_chg_sync_count, \
 					&bServerPortChanged) != 0)
@@ -505,6 +521,7 @@ static void *tracker_report_thread_entrance(void *arg)
 				current_time - last_sync_report_time >= \
 					g_heart_beat_interval)
 			{
+				//向跟踪服务器报告同步时间戳
 				if (tracker_report_sync_timestamp( \
 					pTrackerServer, &bServerPortChanged)!=0)
 				{
@@ -518,6 +535,7 @@ static void *tracker_report_thread_entrance(void *arg)
 			if (current_time - last_df_report_time >= \
 					g_stat_report_interval)
 			{
+				//向跟踪服务器报告磁盘容量
 				if (tracker_report_df_stat(pTrackerServer, \
 						&bServerPortChanged) != 0)
 				{
@@ -759,6 +777,58 @@ static int tracker_start_sync_threads(const FDFSStorageBrief *pStorage)
 	return result;
 }
 
+/*storage server有个状态，如下：
+
+   	FDFS_STORAGE_STATUS_INIT       0:初始化，尚未得到同步已有数据的源服务器
+
+    FDFS_STORAGE_STATUS_WAIT_SYNC  1:等待同步，已得到同步已有数据的源服务器
+
+    FDFS_STORAGE_STATUS_SYNCING    2:同步中
+
+    FDFS_STORAGE_STATUS_DELETED    3:已删除，该服务器从本组中摘除（注:本状态的功能尚未实现）
+
+    FDFS_STORAGE_STATUS_OFFLINE    4:离线
+
+    FDFS_STORAGE_STATUS_ONLINE     5:在线，尚不能提供服务
+
+    FDFS_STORAGE_STATUS_ACTIVE     6:在线，可以提供服务
+
+    FDFS_STORAGE_STATUS_NONE      99
+
+    当storage server的状态为FDFS_STORAGE_STATUS_ONLINE时，当该storage server向tracker server发起一次heart beat时,
+
+    tracker server将其状态更改为FDFS_STORAGE_STATUS_ACTIVE。
+
+    组内新增加一台storage server A时，由系统自动完成已有数据同步，处理逻辑如下：
+
+    1.storage server A连接tracker server，tracker server将storage server A的状态设置为FDFS_STORAGE_STATUS_INIT。storage server
+
+      A询问追加同步的源服务器和追加同步截至时间点，如果该组内只有storage serverA或该组内已成功上传的文件数为，则没有数据需要同步，
+
+      storage server A就可以提供在线服务，此时tracker将其状态设置为FDFS_STORAGE_STATUS_ONLINE，否则tracker server将其状态设置为
+
+      FDFS_STORAGE_STATUS_WAIT_SYNC，进入第二步的处理；
+
+    2.假设tracker server分配向storage server A同步已有数据的源storage server为B。同组的storage server和tracker server通讯得知新
+
+      增了storage server A，将启动同步线程，并向tracker server询问向storage server A追加同步的源服务器和截至时间点。storage server
+
+      B将把截至时间点之前的所有数据同步给storage server A；而其余的storage server从截至时间点之后进行正常同步，只把源头数据同步
+
+      给storage server A。到了截至时间点之后，storage server B对storage server A的同步将由追加同步切换为正常同步，只同步源头数据；
+
+    3.storage server B向storage server A同步完所有数据，暂时没有数据要同步时，storage server B请求tracker server将storage server A的
+
+      状态设置为FDFS_STORAGE_STATUS_ONLINE；
+
+    4.当storage server A向tracker server发起heart beat时，tracker server将其状态更改为FDFS_STORAGE_STATUS_ACTIVE
+
+*/
+
+
+//合并数据服务器:server_count参数:返回的数据服务器个数
+//开启同步线程
+//开启条件:本机没有对方的storage 或者对方状态为未知
 static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 		FDFSStorageBrief *briefServers, const int server_count)
 {
@@ -777,20 +847,24 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 	int nDeletedCount;
 
 	memset(&targetServer, 0, sizeof(targetServer));
+	//pTargetServer指向它
 	pTargetServer = &targetServer;
 
 	nDeletedCount = 0;
+	//指向了指针数组
 	pDiffServer = diffServers;
 	pEnd = briefServers + server_count;
 	//遍历tracker返回的所有storage服务器
 	for (pServer=briefServers; pServer<pEnd; pServer++)
 	{
+		//拷贝targetServer.server
 		memcpy(&(targetServer.server),pServer,sizeof(FDFSStorageBrief));
 
 		ppFound = (FDFSStorageServer **)bsearch(&pTargetServer, \
 			g_sorted_storages, g_storage_count, \
 			sizeof(FDFSStorageServer *), storage_cmp_by_server_id);
 		//如果storage 在已有storage中存在
+		//从排序的g_sorted_storages数据服务器列表进行查找
 		if (ppFound != NULL)
 		{
 			if (g_use_storage_id)
@@ -803,18 +877,22 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 				"tracker status: %d", pServer->ip_addr, \
 				(*ppFound)->server.status, pServer->status);
 			*/
+			//如果状态一致,不作处理
 			if ((*ppFound)->server.status == pServer->status)
 			{
 				continue;
 			}
-
+			//离线，然后恢复，需要做syc对比
+			//如果返回的是离线的状态
 			if (pServer->status == FDFS_STORAGE_STATUS_OFFLINE)
 			{
+				//与本地的状态进行比较
 				if ((*ppFound)->server.status == \
 						FDFS_STORAGE_STATUS_ACTIVE
 				 || (*ppFound)->server.status == \
 						FDFS_STORAGE_STATUS_ONLINE)
 				{
+					//更新自己为离线的状态
 					(*ppFound)->server.status = \
 					FDFS_STORAGE_STATUS_OFFLINE;
 				}
@@ -823,6 +901,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 				     && (*ppFound)->server.status != \
 						FDFS_STORAGE_STATUS_INIT)
 				{
+					//将不同的数据服务器的状态进行拷贝
 					memcpy(pDiffServer++, \
 						&((*ppFound)->server), \
 						sizeof(FDFSStorageBrief));
@@ -831,8 +910,10 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 			else if ((*ppFound)->server.status == \
 					FDFS_STORAGE_STATUS_OFFLINE)
 			{
+				 //如果本地是离线的状态,并且返回的状态不是离线状态,那么用新的返回的状态进行更新
 				(*ppFound)->server.status = pServer->status;
 			}
+			//如果本地是未知状态
 			else if ((*ppFound)->server.status == \
 					FDFS_STORAGE_STATUS_NONE)
 			{
@@ -847,6 +928,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 					(*ppFound)->server.status = \
 							pServer->status;
 					//开启同步线程
+					//如果本地是未知的状态,并且返回的不是删除状态,那么启动同步线程
 					if ((result=tracker_start_sync_threads(\
 						&((*ppFound)->server))) != 0)
 					{
@@ -886,6 +968,7 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 		else if (pServer->status == FDFS_STORAGE_STATUS_DELETED
 		      || pServer->status == FDFS_STORAGE_STATUS_IP_CHANGED)
 		{   //ignore
+			//如果本地存在该数据服务器,返回的删除的暂时不做处理
 			nDeletedCount++;
 		}
 		//新增节点
@@ -904,7 +987,8 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 					" errno: %d, error info: %s", \
 					__LINE__, res, STRERROR(res));
 			}
-
+			
+			//在本地数据服务器列表找不到,那么它是新来的数据服务器
 			if (g_storage_count < FDFS_MAX_SERVERS_EACH_GROUP)
 			{
 				pInsertedServer = g_storage_servers + \
@@ -915,7 +999,8 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 						pInsertedServer))
 				{
 					g_storage_count++;
-					//开启同步线程
+					//开启同步线程，全量同步
+					//在来启动同步线程:这个数据服务器是新加入的
 					result = tracker_start_sync_threads( \
 						&(pInsertedServer->server));
 				}
@@ -963,6 +1048,8 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 
 		return 0;
 	}
+	//比较得出发生改变的数据服务器:g_sorted_storages=本地的数据服务器briefServers=跟踪服务器返回的数据服务器	
+	 
 
 	ppGlobalServer = g_sorted_storages;
 	ppGlobalEnd = g_sorted_storages + g_storage_count;
@@ -988,7 +1075,8 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 					__LINE__, pTrackerServer->ip_addr, \
 					pTrackerServer->port, g_group_name);
 			}
-
+			//因为g_sorted_storages是已经排序好了(由大到小排序)的,所以直接查询pServer的下一个			
+					
 			pServer++;
 		}
 		else if (res == 0)
@@ -998,6 +1086,9 @@ static int tracker_merge_servers(ConnectionInfo *pTrackerServer, \
 		}
 		else
 		{
+			//显然ppGlobalServer后面都是小的,但pServer比ppGlobalServer大,因此不必在找下去了,
+
+            //这一个直接就是不同的
 			memcpy(pDiffServer++, &((*ppGlobalServer)->server), \
 				sizeof(FDFSStorageBrief));
 			ppGlobalServer++;
@@ -1185,7 +1276,7 @@ static int tracker_check_response(ConnectionInfo *pTrackerServer, \
 	pFlags = in_buff;
 	server_count = (nInPackLen - 1) / sizeof(FDFSStorageBrief);
 	pBriefServers = (FDFSStorageBrief *)(in_buff + 1);
-
+	//如果tracker的leader改变
 	if ((*pFlags) & FDFS_CHANGE_FLAG_TRACKER_LEADER)
 	{
 		char tracker_leader_ip[IP_ADDRESS_SIZE];
@@ -2019,6 +2110,7 @@ static int tracker_report_sync_timestamp(ConnectionInfo *pTrackerServer, \
 	return tracker_check_response(pTrackerServer, bServerPortChanged);
 }
 
+//报告数据服务器磁盘容量
 static int tracker_report_df_stat(ConnectionInfo *pTrackerServer, \
 		bool *bServerPortChanged)
 {
@@ -2063,6 +2155,7 @@ static int tracker_report_df_stat(ConnectionInfo *pTrackerServer, \
 
 	for (i=0; i<g_fdfs_store_paths.count; i++)
 	{
+		//直接调用取磁盘容量的函数
 		if (statvfs(g_fdfs_store_paths.paths[i], &sbuf) != 0)
 		{
 			logError("file: "__FILE__", line: %d, " \
@@ -2129,6 +2222,8 @@ static int tracker_report_df_stat(ConnectionInfo *pTrackerServer, \
 	return tracker_check_response(pTrackerServer, bServerPortChanged);
 }
 
+
+//向跟踪服务器发起心跳
 static int tracker_heart_beat(ConnectionInfo *pTrackerServer, \
 		int *pstat_chg_sync_count, bool *bServerPortChanged)
 {
@@ -2140,6 +2235,7 @@ static int tracker_heart_beat(ConnectionInfo *pTrackerServer, \
 
 	memset(out_buff, 0, sizeof(out_buff));
 	pHeader = (TrackerHeader *)out_buff;
+	/*如果状态有发生改变*/
 	if (*pstat_chg_sync_count != g_stat_change_count)
 	{
 		pStatBuff = (FDFSStorageStatBuff *)( \
@@ -2232,7 +2328,7 @@ static int tracker_heart_beat(ConnectionInfo *pTrackerServer, \
 			pStatBuff->sz_last_source_update);
 		long2buff(g_storage_stat.last_sync_update, \
 			pStatBuff->sz_last_sync_update);
-
+		//重新用全局变量赋值同步状态改变个数
 		*pstat_chg_sync_count = g_stat_change_count;
 		body_len = sizeof(FDFSStorageStatBuff);
 	}
@@ -2406,6 +2502,7 @@ int tracker_deal_changelog_response(ConnectionInfo *pTrackerServer)
 	return 0;
 }
 
+//数据服务器启动向跟踪服务器的汇报线程
 int tracker_report_thread_start()
 {
 	ConnectionInfo *pTrackerServer;
@@ -2418,7 +2515,7 @@ int tracker_report_thread_start()
 	{
 		return result;
 	}
-
+	//获得跟踪服务器个数
 	report_tids = (pthread_t *)malloc(sizeof(pthread_t) * \
 					g_tracker_group.server_count);
 	if (report_tids == NULL)
@@ -2433,6 +2530,7 @@ int tracker_report_thread_start()
 	}
 	memset(report_tids, 0, sizeof(pthread_t)*g_tracker_group.server_count);
 
+	//源数据服务器状态列表====>对应于多个跟踪服务器
 	src_storage_status = (int *)malloc(sizeof(int) * \
 					g_tracker_group.server_count);
 	if (src_storage_status == NULL)
@@ -2444,8 +2542,9 @@ int tracker_report_thread_start()
 			errno, STRERROR(errno));
 		return errno != 0 ? errno : ENOMEM;
 	}
+	//src_storage_status初始全部填为-1
 	memset(src_storage_status,-1,sizeof(int)*g_tracker_group.server_count);
-
+	//报告状态数组
 	my_report_status = (signed char *)malloc(sizeof(signed char) * \
 					g_tracker_group.server_count);
 	if (my_report_status == NULL)
@@ -2457,10 +2556,11 @@ int tracker_report_thread_start()
 			errno, STRERROR(errno));
 		return errno != 0 ? errno : ENOMEM;
 	}
+	//my_report_status初始全部填为-1
 	memset(my_report_status, -1, sizeof(char)*g_tracker_group.server_count);
 	
 	g_tracker_reporter_count = 0;
-	//这里是在轮询所有tracker的意思?
+	//有多少个跟踪服务器就创建多少个线程
 	pServerEnd = g_tracker_group.servers + g_tracker_group.server_count;
 	for (pTrackerServer=g_tracker_group.servers; pTrackerServer<pServerEnd; \
 		pTrackerServer++)
@@ -2485,6 +2585,7 @@ int tracker_report_thread_start()
 
 		report_tids[g_tracker_reporter_count] = tid;
 		g_tracker_reporter_count++;
+		//添加到线程列表中
 		if ((result=pthread_mutex_unlock(&reporter_thread_lock)) != 0)
 		{
 			logError("file: "__FILE__", line: %d, " \

@@ -63,6 +63,7 @@ static int binlog_write_cache_len = 0;
 static int binlog_write_version = 1;
 
 /* save sync thread ids */
+//存储所有的同步线程ids
 static pthread_t *sync_tids = NULL;
 
 static int storage_write_to_mark_file(StorageBinLogReader *pReader);
@@ -1023,7 +1024,7 @@ static int storage_sync_data(StorageBinLogReader *pReader, \
 
 	if (result == 0)
 	{
-		//如果同步成功了，才会增加同步行数
+		//只有同步成功了，才会增加同步行数
 		pReader->sync_row_count++;
 		//每500条，更新一下记录
 		if (pReader->sync_row_count - pReader->last_sync_rows >= \
@@ -1826,7 +1827,7 @@ static int storage_reader_sync_init_req(StorageBinLogReader *pReader)
 		getSockIpaddr(pTServer->sock, \
 				tracker_client_ip, IP_ADDRESS_SIZE);
 		insert_into_local_host_ip(tracker_client_ip);
-
+		//获取同步源storage
 		if ((result=tracker_sync_src_req(pTServer, pReader)) != 0)
 		{
 			fdfs_quit(pTServer);
@@ -1919,7 +1920,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 			}
 		}
 	}
-
+	//同步mark文件不存在，则全量同步
 	if (pStorage != NULL && !bFileExist)
 	{
 		if ((result=storage_reader_sync_init_req(pReader)) != 0)
@@ -1953,6 +1954,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 		bNeedSyncOld = iniGetBoolValue(NULL,  \
 				MARK_ITEM_NEED_SYNC_OLD, \
 				&iniContext, false);
+		//需要重新全量同步
 		if (pStorage != NULL && pStorage->status == \
 			FDFS_STORAGE_STATUS_SYNCING)
 		{
@@ -2648,6 +2650,7 @@ static void* storage_sync_thread_entrance(void* arg)
 		previousCode = 0;
 		nContinuousFail = 0;
 		conn_result = 0;
+		//这里主要用来尝试连接对面storage是否
 		while (g_continue_flag && \
 			pStorage->status != FDFS_STORAGE_STATUS_DELETED && \
 			pStorage->status != FDFS_STORAGE_STATUS_IP_CHANGED && \
@@ -2938,7 +2941,8 @@ static void* storage_sync_thread_entrance(void* arg)
 					break;
 				}
 			}
-			//传输同步文件
+			//传输同步文件 这里有区分是否是源文件是否是非源文件
+			//如果是全量同步，则源的，非源的都需要同步
 			else if ((sync_result=storage_sync_data(&reader, \
 				&storage_server, &record)) != 0)
 			{
@@ -3031,7 +3035,7 @@ int storage_sync_thread_start(const FDFSStorageBrief *pStorage)
 			pStorage->id, pStorage->status);
 		return 0;
 	}
-
+	//自己不同步自己
 	if (storage_server_is_myself(pStorage) || \
 		is_local_host_ip(pStorage->ip_addr)) //can't self sync to self
 	{
@@ -3050,7 +3054,7 @@ int storage_sync_thread_start(const FDFSStorageBrief *pStorage)
 	//printf("start storage ip_addr: %s, g_storage_sync_thread_count=%d\n", 
 			pStorage->ip_addr, g_storage_sync_thread_count);
 	*/
-
+	//启动对该storage的同步线程
 	if ((result=pthread_create(&tid, &pattr, storage_sync_thread_entrance, \
 		(void *)pStorage)) != 0)
 	{
