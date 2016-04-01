@@ -2810,7 +2810,7 @@ FDFSStorageDetail *tracker_get_group_sync_src_server(FDFSGroupInfo *pGroup, \
 	FDFSStorageDetail **ppServerEnd;
 
 	ppServerEnd = pGroup->active_servers + pGroup->active_count;
-	for (ppServer=pGroup->active_servers; ppServer<ppServerEnd; ppServer++)
+	for (ppServer = pGroup->active_servers; ppServer<ppServerEnd; ppServer++)
 	{
 		if (strcmp((*ppServer)->id, pDestServer->id) == 0)
 		{

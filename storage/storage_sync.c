@@ -45,7 +45,9 @@
 #define SYNC_DIR_NAME			"sync"
 #define MARK_ITEM_BINLOG_FILE_INDEX	"binlog_index"
 #define MARK_ITEM_BINLOG_FILE_OFFSET	"binlog_offset"
+//标记是否需要全量同步，同时还有标识该storage的同步源是否是本机的意思
 #define MARK_ITEM_NEED_SYNC_OLD		"need_sync_old"
+//标记老的同步是否完成
 #define MARK_ITEM_SYNC_OLD_DONE		"sync_old_done"
 #define MARK_ITEM_UNTIL_TIMESTAMP	"until_timestamp"
 #define MARK_ITEM_SCAN_ROW_COUNT	"scan_row_count"
@@ -1725,6 +1727,7 @@ static int storage_reader_sync_init_req(StorageBinLogReader *pReader)
 	int result;
 	int conn_ret;
 
+	//如果本机未同步完成，是不应该给他人发送文件的
 	if (!g_sync_old_done)
 	{
 		while (g_continue_flag && !g_sync_old_done)
@@ -1827,7 +1830,7 @@ static int storage_reader_sync_init_req(StorageBinLogReader *pReader)
 		getSockIpaddr(pTServer->sock, \
 				tracker_client_ip, IP_ADDRESS_SIZE);
 		insert_into_local_host_ip(tracker_client_ip);
-		//获取同步源storage
+		//获取该storage的信息，获取同步时间结点，判断该storage是否需要全量同步
 		if ((result=tracker_sync_src_req(pTServer, pReader)) != 0)
 		{
 			fdfs_quit(pTServer);
@@ -1891,6 +1894,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 	{
 		bFileExist = false;
 	}
+	//如果对方的状态直接为wait sync，则老的mark无效
 	else if (pStorage->status <= FDFS_STORAGE_STATUS_WAIT_SYNC)
 	{
 		bFileExist = false;
@@ -1901,6 +1905,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 		if (!bFileExist && (g_use_storage_id && pStorage != NULL))
 		{
 			char old_mark_filename[MAX_PATH_SIZE];
+			//老版本的mark文件名字
 			get_mark_filename_by_ip_and_port(pStorage->ip_addr, \
 				g_server_port, old_mark_filename, \
 				sizeof(old_mark_filename));
@@ -1950,7 +1955,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 				__LINE__, full_filename, iniContext.global.count);
 			return ENOENT;
 		}
-
+		
 		bNeedSyncOld = iniGetBoolValue(NULL,  \
 				MARK_ITEM_NEED_SYNC_OLD, \
 				&iniContext, false);
@@ -1958,16 +1963,18 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 		if (pStorage != NULL && pStorage->status == \
 			FDFS_STORAGE_STATUS_SYNCING)
 		{
+			//获取同步句柄
 			if ((result=storage_reader_sync_init_req(pReader)) != 0)
 			{
 				iniFreeContext(&iniContext);
 				return result;
 			}
-
+			//需要同步相当于之前的记录无效
 			if (pReader->need_sync_old && !bNeedSyncOld)
 			{
 				bFileExist = false;  //re-sync
 			}
+			//之前有过同步，并且同步完成
 			else
 			{
 				pReader->need_sync_old = bNeedSyncOld;
@@ -1989,6 +1996,7 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 			pReader->sync_old_done = iniGetBoolValue(NULL,  \
 					MARK_ITEM_SYNC_OLD_DONE, \
 					&iniContext, false);
+			//上次的同步时间
 			pReader->until_timestamp = iniGetIntValue(NULL, \
 					MARK_ITEM_UNTIL_TIMESTAMP, \
 					&iniContext, -1);
@@ -2044,17 +2052,20 @@ int storage_reader_init(FDFSStorageBrief *pStorage, StorageBinLogReader *pReader
 	{
 		return result;
 	}
-
+	//如果本机重启，mark中有记录对应的storage的binlog偏移量
+	//mark文件不存在
 	if (pStorage != NULL && !bFileExist)
 	{
-        	if (!pReader->need_sync_old && pReader->until_timestamp > 0)
+		//这里是指非源结点，其他结点的同步过程，其他结点只用跳到当前最近的即可
+        if (!pReader->need_sync_old && pReader->until_timestamp > 0)
 		{
+			//读取到binlog最近同步结点
 			if ((result=storage_binlog_reader_skip(pReader)) != 0)
 			{
 				return result;
 			}
 		}
-
+		//更新mark文件
 		if ((result=storage_write_to_mark_file(pReader)) != 0)
 		{
 			return result;
@@ -2650,7 +2661,7 @@ static void* storage_sync_thread_entrance(void* arg)
 		previousCode = 0;
 		nContinuousFail = 0;
 		conn_result = 0;
-		//这里主要用来尝试连接对面storage是否
+		//这里主要用来尝试连接对面storage
 		while (g_continue_flag && \
 			pStorage->status != FDFS_STORAGE_STATUS_DELETED && \
 			pStorage->status != FDFS_STORAGE_STATUS_IP_CHANGED && \
@@ -2769,6 +2780,7 @@ static void* storage_sync_thread_entrance(void* arg)
 			break;
 		}
 
+		//正常工作状态时，对方状态应该为active
 		if (!reader.need_sync_old)
 		{
 			while (g_continue_flag && \
@@ -2817,7 +2829,7 @@ static void* storage_sync_thread_entrance(void* arg)
 			sleep(1);
 			continue;
 		}
-
+		//这么搞合适吗
 		if (pStorage->status == FDFS_STORAGE_STATUS_WAIT_SYNC)
 		{
 			pStorage->status = FDFS_STORAGE_STATUS_SYNCING;
@@ -2828,6 +2840,8 @@ static void* storage_sync_thread_entrance(void* arg)
 
 		if (pStorage->status == FDFS_STORAGE_STATUS_SYNCING)
 		{
+			//这个状态改成离线是什么鬼,难道是先离线，再上线?
+			//这尼玛是同步完成了吧?
 			if (reader.need_sync_old && reader.sync_old_done)
 			{
 				pStorage->status = FDFS_STORAGE_STATUS_OFFLINE;
@@ -2862,11 +2876,13 @@ static void* storage_sync_thread_entrance(void* arg)
 			read_result = storage_binlog_read(&reader, \
 					&record, &record_len);
 			//参数name 指定的目录不存在, 或是参数name 为一空字符串。
+			//需要看这个错误到底是文件不存在，还是没有新的记录
 			if (read_result == ENOENT)
 			{
 				if (reader.need_sync_old && \
 					!reader.sync_old_done)
 				{
+					//标明已经完全同步完成
 					reader.sync_old_done = true;
 					if (storage_write_to_mark_file(&reader) != 0)
 					{
@@ -2881,6 +2897,7 @@ static void* storage_sync_thread_entrance(void* arg)
 					if (pStorage->status == \
 						FDFS_STORAGE_STATUS_SYNCING)
 					{
+						//同步失败，将对方下线?
 						pStorage->status = \
 							FDFS_STORAGE_STATUS_OFFLINE;
 						storage_report_storage_status( \

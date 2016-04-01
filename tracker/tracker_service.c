@@ -2145,6 +2145,7 @@ static int tracker_deal_storage_sync_notify(struct fast_task_info *pTask)
 		pClientInfo->pStorage->psync_src_server = \
 			tracker_mem_get_storage(pClientInfo->pGroup, \
 				sync_src_id);
+		//获取同步源storage失败，即在本server中，指定的源storage是不存在的
 		if (pClientInfo->pStorage->psync_src_server == NULL)
 		{
 			logError("file: "__FILE__", line: %d, " \
@@ -2155,7 +2156,7 @@ static int tracker_deal_storage_sync_notify(struct fast_task_info *pTask)
 			pTask->length = sizeof(TrackerHeader);
 			return ENOENT;
 		}
-
+		//在本server中，指定的源storage是不可用的
 		if (pClientInfo->pStorage->psync_src_server->status == \
 			FDFS_STORAGE_STATUS_DELETED)
 		{
@@ -2167,7 +2168,7 @@ static int tracker_deal_storage_sync_notify(struct fast_task_info *pTask)
 			pTask->length = sizeof(TrackerHeader);
 			return ENOENT;
 		}
-
+		//ip是改变了的
 		if (pClientInfo->pStorage->psync_src_server->status == \
 			FDFS_STORAGE_STATUS_IP_CHANGED)
 		{
@@ -3105,59 +3106,59 @@ static int tracker_deal_storage_sync_dest_req(struct fast_task_info *pTask)
 
 	do
 	{
-	if (pTask->length - sizeof(TrackerHeader) != 0)
-	{
-		logError("file: "__FILE__", line: %d, " \
-			"cmd=%d, client ip: %s, package size " \
-			PKG_LEN_PRINTF_FORMAT" is not correct, " \
-			"expect length: 0", \
-			__LINE__, TRACKER_PROTO_CMD_STORAGE_SYNC_DEST_REQ, \
-			pTask->client_ip, pTask->length - \
-			(int)sizeof(TrackerHeader));
-		pTask->length = sizeof(TrackerHeader);
-		return EINVAL;
-	}
-
-	if (pClientInfo->pGroup->count <= 1)
-	{
-		break;
-	}
-
-	source_count = 0;
-	ppServerEnd = pClientInfo->pGroup->all_servers + \
-		      pClientInfo->pGroup->count;
-	for (ppServer=pClientInfo->pGroup->all_servers; \
-			ppServer<ppServerEnd; ppServer++)
-	{
-		if (strcmp((*ppServer)->id, \
-				pClientInfo->pStorage->id) == 0)
+		if (pTask->length - sizeof(TrackerHeader) != 0)
 		{
-			continue;
+			logError("file: "__FILE__", line: %d, " \
+				"cmd=%d, client ip: %s, package size " \
+				PKG_LEN_PRINTF_FORMAT" is not correct, " \
+				"expect length: 0", \
+				__LINE__, TRACKER_PROTO_CMD_STORAGE_SYNC_DEST_REQ, \
+				pTask->client_ip, pTask->length - \
+				(int)sizeof(TrackerHeader));
+			pTask->length = sizeof(TrackerHeader);
+			return EINVAL;
 		}
 
-		if ((*ppServer)->status ==FDFS_STORAGE_STATUS_OFFLINE 
-			|| (*ppServer)->status == FDFS_STORAGE_STATUS_ONLINE
-			|| (*ppServer)->status == FDFS_STORAGE_STATUS_ACTIVE)
+		if (pClientInfo->pGroup->count <= 1)
 		{
-			source_count++;
+			break;
 		}
-	}
-	if (source_count == 0)
-	{
-		break;
-	}
 
-	pSrcStorage = tracker_get_group_sync_src_server( \
-			pClientInfo->pGroup, pClientInfo->pStorage);
-	if (pSrcStorage == NULL)
-	{
-		pTask->length = sizeof(TrackerHeader);
-		return ENOENT;
-	}
+		source_count = 0;
+		ppServerEnd = pClientInfo->pGroup->all_servers + \
+			      pClientInfo->pGroup->count;
+		for (ppServer=pClientInfo->pGroup->all_servers; \
+				ppServer<ppServerEnd; ppServer++)
+		{
+			if (strcmp((*ppServer)->id, \
+					pClientInfo->pStorage->id) == 0)
+			{
+				continue;
+			}
+			//离线也能做同步吗?
+			if ((*ppServer)->status == FDFS_STORAGE_STATUS_OFFLINE 
+				|| (*ppServer)->status == FDFS_STORAGE_STATUS_ONLINE
+				|| (*ppServer)->status == FDFS_STORAGE_STATUS_ACTIVE)
+			{
+				source_count++;
+			}
+		}
+		if (source_count == 0)
+		{
+			break;
+		}
+		//找了一个active的storage
+		pSrcStorage = tracker_get_group_sync_src_server( \
+				pClientInfo->pGroup, pClientInfo->pStorage);
+		if (pSrcStorage == NULL)
+		{
+			pTask->length = sizeof(TrackerHeader);
+			return ENOENT;
+		}
 
-	pBody=(TrackerStorageSyncReqBody *)(pTask->data+sizeof(TrackerHeader));
-	strcpy(pBody->src_id, pSrcStorage->id);
-	long2buff(sync_until_timestamp, pBody->until_timestamp);
+		pBody=(TrackerStorageSyncReqBody *)(pTask->data+sizeof(TrackerHeader));
+		strcpy(pBody->src_id, pSrcStorage->id);
+		long2buff(sync_until_timestamp, pBody->until_timestamp);
 
 	} while (0);
 
@@ -3176,7 +3177,7 @@ static int tracker_deal_storage_sync_dest_req(struct fast_task_info *pTask)
 	pClientInfo->pStorage->sync_until_timestamp = sync_until_timestamp;
 	pClientInfo->pStorage->status = FDFS_STORAGE_STATUS_WAIT_SYNC;
 	pClientInfo->pGroup->chg_count++;
-
+	//将storage存入文件
 	tracker_save_storages();
 
 	pTask->length = sizeof(TrackerHeader)+sizeof(TrackerStorageSyncReqBody);

@@ -101,6 +101,7 @@
 # memo: if the dest storage server not do need sync from one of storage servers in the group, the response body is emtpy（若新storage server不需要源storage server的同步，返回空）
 
 */
+//获取指定源storage的源storage
 #define TRACKER_PROTO_CMD_STORAGE_SYNC_SRC_REQ      86  //src storage require sync
 //本storage请求同步
 /*

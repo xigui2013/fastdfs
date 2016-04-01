@@ -440,7 +440,7 @@ static void *tracker_report_thread_entrance(void *arg)
 			//旧的同步设为标记true
 			sync_old_done = true;
 		}
-		////获得源数据服务器的状态
+		////通知所有tracker,本storage有源服务器，有同步until时间
 		src_storage_status[tracker_index] = \
 					tracker_sync_notify(pTrackerServer);
 		//检查是否所有tracker都通告失败,比如源storage status是deleted之类的
@@ -1600,9 +1600,10 @@ int tracker_sync_src_req(ConnectionInfo *pTrackerServer, \
 
 	memcpy(sync_src_id, syncReqbody.src_id, FDFS_STORAGE_ID_MAX_SIZE);
 	sync_src_id[FDFS_STORAGE_ID_MAX_SIZE - 1] = '\0';
-
+	//判断对方的源storage是否是本storage
 	pReader->need_sync_old = storage_id_is_myself(sync_src_id);
-       	pReader->until_timestamp = (time_t)buff2long( \
+	//获取同步时间戳，即本次同步的时间结点
+    pReader->until_timestamp = (time_t)buff2long( \
 					syncReqbody.until_timestamp);
 
 	return 0;
