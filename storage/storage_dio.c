@@ -418,86 +418,53 @@ int dio_write_file(struct fast_task_info *pTask)
 	result = 0;
 	do
 	{
-	if (pFileContext->fd < 0)
-	{
-		if (pFileContext->extra_info.upload.before_open_callback!=NULL)
+		if (pFileContext->fd < 0)
 		{
-			result = pFileContext->extra_info.upload. \
-					before_open_callback(pTask);
-			if (result != 0)
+			if (pFileContext->extra_info.upload.before_open_callback!=NULL)
+			{
+				result = pFileContext->extra_info.upload. \
+						before_open_callback(pTask);
+				if (result != 0)
+				{
+					break;
+				}
+			}
+
+			if ((result=dio_open_file(pFileContext)) != 0)
 			{
 				break;
 			}
 		}
 
-		if ((result=dio_open_file(pFileContext)) != 0)
+		pDataBuff = pTask->data + pFileContext->buff_offset;
+		write_bytes = pTask->length - pFileContext->buff_offset;
+		if (write(pFileContext->fd, pDataBuff, write_bytes) != write_bytes)
+		{
+			result = errno != 0 ? errno : EIO;
+			logError("file: "__FILE__", line: %d, " \
+				"write to file: %s fail, fd=%d, write_bytes=%d, " \
+				"errno: %d, error info: %s", \
+				__LINE__, pFileContext->filename, \
+				pFileContext->fd, write_bytes, \
+				result, STRERROR(result));
+		}
+
+		pthread_mutex_lock(&g_dio_thread_lock);
+		g_storage_stat.total_file_write_count++;
+		if (result == 0)
+		{
+			g_storage_stat.success_file_write_count++;
+		}
+		pthread_mutex_unlock(&g_dio_thread_lock);
+
+		if (result != 0)
 		{
 			break;
 		}
-	}
 
-	pDataBuff = pTask->data + pFileContext->buff_offset;
-	write_bytes = pTask->length - pFileContext->buff_offset;
-	if (write(pFileContext->fd, pDataBuff, write_bytes) != write_bytes)
-	{
-		result = errno != 0 ? errno : EIO;
-		logError("file: "__FILE__", line: %d, " \
-			"write to file: %s fail, fd=%d, write_bytes=%d, " \
-			"errno: %d, error info: %s", \
-			__LINE__, pFileContext->filename, \
-			pFileContext->fd, write_bytes, \
-			result, STRERROR(result));
-	}
-
-	pthread_mutex_lock(&g_dio_thread_lock);
-	g_storage_stat.total_file_write_count++;
-	if (result == 0)
-	{
-		g_storage_stat.success_file_write_count++;
-	}
-	pthread_mutex_unlock(&g_dio_thread_lock);
-
-	if (result != 0)
-	{
-		break;
-	}
-
-	if (pFileContext->calc_crc32)
-	{
-		pFileContext->crc32 = CRC32_ex(pDataBuff, write_bytes, \
-					pFileContext->crc32);
-	}
-
-	if (pFileContext->calc_file_hash)
-	{
-		if (g_file_signature_method == STORAGE_FILE_SIGNATURE_METHOD_HASH)
-		{
-			CALC_HASH_CODES4(pDataBuff, write_bytes, \
-					pFileContext->file_hash_codes)
-		}
-		else
-		{
-			my_md5_update(&pFileContext->md5_context, \
-				(unsigned char *)pDataBuff, write_bytes);
-		}
-	}
-
-	/*
-	logInfo("###dio write bytes: %d, pTask->length=%d, buff_offset=%d", \
-		write_bytes, pTask->length, pFileContext->buff_offset);
-	*/
-
-	pFileContext->offset += write_bytes;
-	if (pFileContext->offset < pFileContext->end)
-	{
-		pFileContext->buff_offset = 0;
-		storage_nio_notify(pTask);  //notify nio to deal
-	}
-	else
-	{
 		if (pFileContext->calc_crc32)
 		{
-			pFileContext->crc32 = CRC32_FINAL( \
+			pFileContext->crc32 = CRC32_ex(pDataBuff, write_bytes, \
 						pFileContext->crc32);
 		}
 
@@ -505,32 +472,65 @@ int dio_write_file(struct fast_task_info *pTask)
 		{
 			if (g_file_signature_method == STORAGE_FILE_SIGNATURE_METHOD_HASH)
 			{
-				FINISH_HASH_CODES4(pFileContext->file_hash_codes)
+				CALC_HASH_CODES4(pDataBuff, write_bytes, \
+						pFileContext->file_hash_codes)
 			}
 			else
 			{
-				my_md5_final((unsigned char *)(pFileContext-> \
-				file_hash_codes), &pFileContext->md5_context);
+				my_md5_update(&pFileContext->md5_context, \
+					(unsigned char *)pDataBuff, write_bytes);
 			}
 		}
 
-		if (pFileContext->extra_info.upload.before_close_callback != NULL)
+		/*
+		logInfo("###dio write bytes: %d, pTask->length=%d, buff_offset=%d", \
+			write_bytes, pTask->length, pFileContext->buff_offset);
+		*/
+
+		pFileContext->offset += write_bytes;
+		if (pFileContext->offset < pFileContext->end)
 		{
-			result = pFileContext->extra_info.upload. \
-					before_close_callback(pTask);
+			pFileContext->buff_offset = 0;
+			storage_nio_notify(pTask);  //notify nio to deal
+		}
+		else
+		{
+			if (pFileContext->calc_crc32)
+			{
+				pFileContext->crc32 = CRC32_FINAL( \
+							pFileContext->crc32);
+			}
+
+			if (pFileContext->calc_file_hash)
+			{
+				if (g_file_signature_method == STORAGE_FILE_SIGNATURE_METHOD_HASH)
+				{
+					FINISH_HASH_CODES4(pFileContext->file_hash_codes)
+				}
+				else
+				{
+					my_md5_final((unsigned char *)(pFileContext-> \
+					file_hash_codes), &pFileContext->md5_context);
+				}
+			}
+
+			if (pFileContext->extra_info.upload.before_close_callback != NULL)
+			{
+				result = pFileContext->extra_info.upload. \
+						before_close_callback(pTask);
+			}
+
+			/* file write done, close it */
+			close(pFileContext->fd);
+			pFileContext->fd = -1;
+
+			if (pFileContext->done_callback != NULL)
+			{
+				pFileContext->done_callback(pTask, result);
+			}
 		}
 
-		/* file write done, close it */
-		close(pFileContext->fd);
-		pFileContext->fd = -1;
-
-		if (pFileContext->done_callback != NULL)
-		{
-			pFileContext->done_callback(pTask, result);
-		}
-	}
-
-	return 0;
+		return 0;
 	} while (0);
 
 	pClientInfo->clean_func(pTask);

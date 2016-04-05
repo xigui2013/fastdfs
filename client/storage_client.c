@@ -837,7 +837,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	{
 		prefix_len = 0;
 	}
-	//文件续传?
+	//主从文件
 	bUploadSlave = (strlen(group_name) > 0 && master_filename_len > 0);
 	if (bUploadSlave)
 	{

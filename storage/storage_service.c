@@ -1132,6 +1132,7 @@ static void storage_upload_file_done_callback(struct fast_task_info *pTask, \
 	//小文件合并存储
 	if (pFileContext->extra_info.upload.file_type & _FILE_TYPE_TRUNK)
 	{
+		//确保文件存储正确
 		result = trunk_client_trunk_alloc_confirm( \
 			&(pFileContext->extra_info.upload.trunk_info), err_no);
 		if (err_no != 0)
@@ -2461,7 +2462,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 			file_size_in_name = file_size;
 		}
 	}
-	//为什么又要生成一次名称?
+	//根据crc32重新生成文件名
 	if ((result=storage_get_filename(pClientInfo, end_time, \
 		file_size_in_name, pFileContext->crc32, \
 		pFileContext->extra_info.upload.formatted_ext_name, \
@@ -2477,13 +2478,14 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 		FDFS_STORAGE_STORE_PATH_PREFIX_CHAR, \
 		pFileContext->extra_info.upload.trunk_info.path. \
 		store_path_index, new_filename);
-
+	//trunk文件不需要重命名
 	if (pFileContext->extra_info.upload.file_type & _FILE_TYPE_TRUNK)
 	{
 		char trunk_buff[FDFS_TRUNK_FILE_INFO_LEN + 1];
 		trunk_file_info_encode(&(pFileContext->extra_info.upload. \
 					trunk_info.file), trunk_buff);
-
+		//27位刚好是，文件名除去扩展名
+		//这里是给文件加上扩展名
 		sprintf(new_fname2log + FDFS_LOGIC_FILE_PATH_LEN \
 			+ FDFS_FILENAME_BASE64_LENGTH, "%s%s", trunk_buff, \
 			new_filename + FDFS_TRUE_FILE_PATH_LEN + \
@@ -2609,7 +2611,7 @@ static int storage_service_upload_file_done(struct fast_task_info *pTask)
 	{
 		strcpy(pFileContext->filename, new_full_filename);
 	}
-	//
+	//非link文件
 	if (g_check_file_duplicate && !(pFileContext->extra_info.upload.file_type & \
 		_FILE_TYPE_LINK))
 	{
@@ -4549,6 +4551,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 		if (g_if_use_trunk_file && trunk_check_size( \
 			TRUNK_CALC_SIZE(file_bytes)))
 		{
+			//小文件合并存储标记
 			pFileContext->extra_info.upload.file_type |= \
 						_FILE_TYPE_TRUNK;
 		}
@@ -4560,6 +4563,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 
 		pFileContext->extra_info.upload.if_sub_path_alloced = true;
 		pTrunkInfo = &(pFileContext->extra_info.upload.trunk_info);
+		//判断是否需要重新分配trunk文件，并分配空间
 		if ((result=trunk_client_trunk_alloc_space( \
 			TRUNK_CALC_SIZE(file_bytes), pTrunkInfo)) != 0)
 		{
@@ -4567,12 +4571,16 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 		}
 
 		clean_func = dio_trunk_write_finish_clean_up;
+		//文件偏移量，头 + 文件大小
 		file_offset = TRUNK_FILE_START_OFFSET((*pTrunkInfo));
     	pFileContext->extra_info.upload.if_gen_filename = true;
+		// /app/fastdfs/stores/data/00/00/000001
 		trunk_get_full_filename(pTrunkInfo, pFileContext->filename, \
 				sizeof(pFileContext->filename));
+		//文件检查，确保trunk文件已经创建完成
 		pFileContext->extra_info.upload.before_open_callback = \
 					dio_check_trunk_file_when_upload;
+		//将头部信息写入trunk
 		pFileContext->extra_info.upload.before_close_callback = \
 					dio_write_chunk_header;
 		pFileContext->open_flags = O_RDWR | g_extra_open_file_flags;

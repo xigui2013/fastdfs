@@ -326,8 +326,9 @@ char *trunk_get_full_filename_ex(const FDFSStorePaths *pStorePaths, \
 	char *pStorePath;
 
 	pStorePath = pStorePaths->paths[pTrunkInfo->path.store_path_index];
+	// 000001
 	TRUNK_GET_FILENAME(pTrunkInfo->file.id, short_filename);
-
+	// /app/fastdfs/stores/data/00/00/000001
 	snprintf(full_filename, buff_size, \
 			"%s/data/"FDFS_STORAGE_DATA_DIR_FORMAT"/" \
 			FDFS_STORAGE_DATA_DIR_FORMAT"/%s", \

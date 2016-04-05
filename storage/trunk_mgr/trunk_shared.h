@@ -58,12 +58,12 @@ extern struct base64_context g_fdfs_base64_context;   //base64 context
 typedef int (*stat_func)(const char *filename, struct stat *buf);
 
 typedef struct tagFDFSTrunkHeader {
-	char file_type;
-	char formatted_ext_name[FDFS_FILE_EXT_NAME_MAX_LEN + 2];
-	int alloc_size;
-	int file_size;
-	int crc32;
-	int mtime;
+	char file_type;	//文件类型，是link文件还是真实文件
+	char formatted_ext_name[FDFS_FILE_EXT_NAME_MAX_LEN + 2];	//7位文件扩展名
+	int alloc_size;	//文件实际大小
+	int file_size;  //以slot为基准的文件大小
+	int crc32;		//crc32校验
+	int mtime;		//文件修改时间
 } FDFSTrunkHeader;
 
 typedef struct tagFDFSTrunkPathInfo {
@@ -73,7 +73,7 @@ typedef struct tagFDFSTrunkPathInfo {
 } FDFSTrunkPathInfo;
 
 typedef struct tagFDFSTrunkFileInfo {
-	int id;      //trunk file id
+	int id;      //trunk file id  
 	int offset;  //file offset
 	int size;    //space size
 } FDFSTrunkFileInfo;

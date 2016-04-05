@@ -1495,7 +1495,7 @@ static FDFSTrunkNode *trunk_create_trunk_file(const int store_path_index, \
 	pTrunkNode->trunk.file.size = g_trunk_file_size;
 	pTrunkNode->trunk.status = FDFS_TRUNK_STATUS_FREE;
 	pTrunkNode->next = NULL;
-
+	//获取一个新文件名,并创建指定大小的实质文件(更改文件描述符)
 	*err_no = trunk_create_next_file(&(pTrunkNode->trunk));
 	if (*err_no != 0)
 	{
@@ -1570,6 +1570,7 @@ int trunk_alloc_space(const int size, FDFSTrunkFullInfo *pResult)
 	}
 	else
 	{
+		//没找到空闲空间，则新建一个trunk file
 		pTrunkNode = trunk_create_trunk_file(pResult->path. \
 					store_path_index, &result);
 		if (pTrunkNode == NULL)
@@ -1579,7 +1580,7 @@ int trunk_alloc_space(const int size, FDFSTrunkFullInfo *pResult)
 		}
 	}
 	pthread_mutex_unlock(&trunk_mem_lock);
-
+	//切割文件大小
 	result = trunk_split(pTrunkNode, size);
 	if (result != 0)
 	{
@@ -1771,7 +1772,7 @@ int trunk_init_file_ex(const char *filename, const int64_t file_size)
 			result, STRERROR(result));
 		return result;
 	}
-
+	//指定文件大小
 	if (ftruncate(fd, file_size) == 0)
 	{
 		result = 0;

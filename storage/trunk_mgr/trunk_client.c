@@ -96,12 +96,12 @@ int trunk_client_trunk_alloc_space(const int file_size, \
 	int result;
 	ConnectionInfo trunk_server;
 	ConnectionInfo *pTrunkServer;
-
+	//如果自己是trunker server 则直接分配空间
 	if (g_if_trunker_self)
 	{
 		return trunk_alloc_space(file_size, pTrunkInfo);
 	}
-
+	//如果自己不是trunker server 则需要连接trunker server，让它分配空间
 	if (*(g_trunk_server.ip_addr) == '\0')
 	{
 		logError("file: "__FILE__", line: %d, " \
