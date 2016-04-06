@@ -99,7 +99,7 @@ static int storage_sync_copy_file(ConnectionInfo *pStorageServer, \
 	int64_t total_send_bytes;
 	int result;
 	bool need_sync_file;
-	//trunk的先不看
+	//通过名字，获取trunk文件的信息，同时读取文件头，获取header信息
 	if ((result=trunk_file_stat(pRecord->store_path_index, \
 		pRecord->true_filename, pRecord->true_filename_len, \
 		&stat_buf, &trunkInfo, &trunkHeader)) != 0)

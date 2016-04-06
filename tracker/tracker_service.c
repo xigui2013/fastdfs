@@ -2557,7 +2557,7 @@ static int tracker_deal_service_query_storage( \
 		pTask->length = sizeof(TrackerHeader);
 		return ENOENT;
 	}
-
+	//带组名字的查找对应的组
 	if (cmd == TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITH_GROUP_ONE
 	 || cmd == TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITH_GROUP_ALL)
 	{
@@ -2591,7 +2591,7 @@ static int tracker_deal_service_query_storage( \
 		}
 	}
 	else if (g_groups.store_lookup == FDFS_STORE_LOOKUP_ROUND_ROBIN
-		||g_groups.store_lookup==FDFS_STORE_LOOKUP_LOAD_BALANCE)
+		||g_groups.store_lookup == FDFS_STORE_LOOKUP_LOAD_BALANCE)
 	{
 		int write_group_index;
 

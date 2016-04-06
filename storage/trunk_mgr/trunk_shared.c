@@ -552,10 +552,12 @@ int trunk_file_do_lstat_func_ex(const FDFSStorePaths *pStorePaths, \
 
 		if (stat_func == FDFS_STAT_FUNC_STAT)
 		{
+			// 通过文件名filename获取文件信息，并保存在buf所指的结构体stat中
 			result = stat(full_filename, pStat);
 		}
 		else
 		{
+			//lstat能处理文件链接
 			result = lstat(full_filename, pStat);
 		}
 		if (result == 0)
@@ -574,6 +576,7 @@ int trunk_file_do_lstat_func_ex(const FDFSStorePaths *pStorePaths, \
 		buff, &buff_len);
 
 	file_size = buff2long(buff + sizeof(int) * 2);
+	//这里没看懂，难道说slave file文件没有存在trunk中?
 	if (!IS_TRUNK_FILE(file_size))  //slave file
 	{
 		snprintf(full_filename, sizeof(full_filename), "%s/data/%s", \

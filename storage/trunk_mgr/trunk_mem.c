@@ -1404,7 +1404,7 @@ static int trunk_split(FDFSTrunkNode *pNode, const int size)
 	int result;
 	struct fast_mblock_node *pMblockNode;
 	FDFSTrunkNode *pTrunkNode;
-
+	//如果剩余空间不足以分隔成一个最小空间，则不再分割
 	if (pNode->trunk.file.size - size < g_slot_min_size)
 	{
 		return trunk_mem_binlog_write(g_current_time, \
@@ -1517,7 +1517,7 @@ int trunk_alloc_space(const int size, FDFSTrunkFullInfo *pResult)
 	int result;
 
 	STORAGE_TRUNK_CHECK_STATUS();
-
+	//查找文件大小时，安装设定的最小大小文件进行查找
 	target_slot.size = (size > g_slot_min_size) ? size : g_slot_min_size;
 	target_slot.head = NULL;
 
@@ -1563,9 +1563,10 @@ int trunk_alloc_space(const int size, FDFSTrunkFullInfo *pResult)
 		}
 		else
 		{
+			//找到该节点，删除该结点
 			pPreviousNode->next = pTrunkNode->next;
 		}
-
+		//删除该结点
 		trunk_free_block_delete(&(pTrunkNode->trunk));
 	}
 	else

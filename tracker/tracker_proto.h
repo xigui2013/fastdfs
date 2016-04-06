@@ -422,7 +422,9 @@
 #define STORAGE_PROTO_CMD_FETCH_ONE_PATH_BINLOG	26   //fetch binlog of one store path
 #define STORAGE_PROTO_CMD_RESP			TRACKER_PROTO_CMD_RESP
 #define STORAGE_PROTO_CMD_UPLOAD_MASTER_FILE	STORAGE_PROTO_CMD_UPLOAD_FILE
-
+//请求trunk server为小文件分配空间
+//in:g_group_name file_size store_path_index
+//out:
 #define STORAGE_PROTO_CMD_TRUNK_ALLOC_SPACE   	     27  //since V3.00, storage to trunk server
 #define STORAGE_PROTO_CMD_TRUNK_ALLOC_CONFIRM	     28  //since V3.00, storage to trunk server
 #define STORAGE_PROTO_CMD_TRUNK_FREE_SPACE	     29  //since V3.00, storage to trunk server

@@ -2158,6 +2158,7 @@ static int storage_gen_filename(StorageClientInfo *pClientInfo, \
 	int2buff(htonl(g_server_id_in_filename), buff);
 	//时间转换成字符
 	int2buff(timestamp, buff+sizeof(int));
+	//masked file size 有什么作用
 	if ((file_size >> 32) != 0)
 	{
 		masked_file_size = file_size;
@@ -4571,7 +4572,7 @@ static int storage_upload_file(struct fast_task_info *pTask, bool bAppenderFile)
 		}
 
 		clean_func = dio_trunk_write_finish_clean_up;
-		//文件偏移量，头 + 文件大小
+		//文件偏移量，头 + 偏移量
 		file_offset = TRUNK_FILE_START_OFFSET((*pTrunkInfo));
     	pFileContext->extra_info.upload.if_gen_filename = true;
 		// /app/fastdfs/stores/data/00/00/000001
@@ -5549,17 +5550,17 @@ static int storage_sync_copy_file(struct fast_task_info *pTask, \
 	}
 	else
 	{
-	if (0 != nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
-			4 + FDFS_GROUP_NAME_MAX_LEN + filename_len))
-	{
-		logError("file: "__FILE__", line: %d, " \
-			"client ip: %s, in request pkg, " \
-			" remain bytes: %"PRId64" != 0 ", \
-			__LINE__, pTask->client_ip, \
-			nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
-			FDFS_GROUP_NAME_MAX_LEN + filename_len));
-		return EINVAL;
-	}
+		if (0 != nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
+				4 + FDFS_GROUP_NAME_MAX_LEN + filename_len))
+		{
+			logError("file: "__FILE__", line: %d, " \
+				"client ip: %s, in request pkg, " \
+				" remain bytes: %"PRId64" != 0 ", \
+				__LINE__, pTask->client_ip, \
+				nInPackLen - (2*FDFS_PROTO_PKG_LEN_SIZE + \
+				FDFS_GROUP_NAME_MAX_LEN + filename_len));
+			return EINVAL;
+		}
 	}
 
 	memcpy(filename, p, filename_len);
@@ -5601,7 +5602,7 @@ static int storage_sync_copy_file(struct fast_task_info *pTask, \
 		have_file_content)
 	{
 		struct stat stat_buf;
-
+		//有可能文件不存在
 		if ((result=trunk_file_lstat(store_path_index, \
 			true_filename, filename_len, &stat_buf, \
 			&(pFileContext->extra_info.upload.trunk_info), \
