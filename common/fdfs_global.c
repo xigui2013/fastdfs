@@ -69,6 +69,7 @@ int g_connection_pool_max_idle_time = 3600;
 data filename format:
 HH/HH/filename: HH for 2 uppercase hex chars
 */
+//检查文件名格式是否正确
 int fdfs_check_data_filename(const char *filename, const int len)
 {
 	if (len < 6)

@@ -1907,7 +1907,7 @@ int storage_func_init(const char *filename, \
 	{
 		return result;
 	}
-	//本机其他信息初始化
+	//读取本机上传记录等状态信息storage_stat.dat
 	return storage_open_stat_file();
 }
 

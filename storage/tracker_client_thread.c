@@ -1403,7 +1403,7 @@ static int tracker_check_response(ConnectionInfo *pTrackerServer, \
 
 			tracker_fetch_trunk_fid(pTrackerServer);
 			g_if_trunker_self = true;
-
+			//trunker server ÐÞ¸Ä
 			if ((result=storage_trunk_init()) != 0)
 			{
 				return result;

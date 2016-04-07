@@ -5528,6 +5528,7 @@ int tracker_mem_get_storage_by_filename(const byte cmd,FDFS_DOWNLOAD_TYPE_PARAM\
 	memset(szIpAddr, 0, sizeof(szIpAddr));
 	if (cmd == TRACKER_PROTO_CMD_SERVICE_QUERY_FETCH_ONE)
 	{
+		//配置为源storage下载，则直接从源下载
 		if (g_groups.download_server == \
 				FDFS_DOWNLOAD_SERVER_SOURCE_FIRST)
 		{
@@ -5629,43 +5630,43 @@ int tracker_mem_get_storage_by_filename(const byte cmd,FDFS_DOWNLOAD_TYPE_PARAM\
 		{
 			if (bNormalFile)
 			{
-			current_time = g_current_time;
-			if ((file_timestamp < current_time - \
-				g_storage_sync_file_max_delay) || \
-			(ppStoreServers[0]->stat.last_synced_timestamp > \
-				file_timestamp) || \
-			(ppStoreServers[0]->stat.last_synced_timestamp + 1 >= \
-			 file_timestamp && current_time - file_timestamp > \
-				g_storage_sync_file_max_time)\
-			|| (storage_ip == INADDR_NONE \
-			&& g_groups.store_server == FDFS_STORE_SERVER_ROUND_ROBIN))
-			{
-				break;
-			}
-
-			if (storage_ip == INADDR_NONE)
-			{
-#ifdef WITH_HTTPD
-				if (download_type == FDFS_DOWNLOAD_TYPE_TCP)
+				current_time = g_current_time;
+				if ((file_timestamp < current_time - \
+					g_storage_sync_file_max_delay) || \
+				(ppStoreServers[0]->stat.last_synced_timestamp > \
+					file_timestamp) || \
+				(ppStoreServers[0]->stat.last_synced_timestamp + 1 >= \
+				 file_timestamp && current_time - file_timestamp > \
+					g_storage_sync_file_max_time)\
+				|| (storage_ip == INADDR_NONE \
+				&& g_groups.store_server == FDFS_STORE_SERVER_ROUND_ROBIN))
 				{
-				ppStoreServers[0] = pGroupStoreServer;
-				break;
-				}
-				else
-				{
-				pStoreSrcServer=tracker_mem_get_active_storage_by_id(
-					*ppGroup, pGroupStoreServer->id);
-				if (pStoreSrcServer != NULL)
-				{
-					ppStoreServers[0] = pStoreSrcServer;
 					break;
 				}
-				}
+
+				if (storage_ip == INADDR_NONE)
+				{
+#ifdef WITH_HTTPD
+					if (download_type == FDFS_DOWNLOAD_TYPE_TCP)
+					{
+					ppStoreServers[0] = pGroupStoreServer;
+					break;
+					}
+					else
+					{
+					pStoreSrcServer=tracker_mem_get_active_storage_by_id(
+						*ppGroup, pGroupStoreServer->id);
+					if (pStoreSrcServer != NULL)
+					{
+						ppStoreServers[0] = pStoreSrcServer;
+						break;
+					}
+					}
 #else
-				ppStoreServers[0] = pGroupStoreServer;
-				break;
+					ppStoreServers[0] = pGroupStoreServer;
+					break;
 #endif
-			}
+				}
 			}
 
       memset(&ip_addr, 0, sizeof(ip_addr));
