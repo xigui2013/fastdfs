@@ -84,6 +84,11 @@ bool g_use_storage_id = false;    //identify storage by ID instead of IP address
 byte g_id_type_in_filename = FDFS_ID_TYPE_IP_ADDRESS; //id type of the storage server in the filename
 bool g_store_slave_file_use_link = false; //if store slave file use symbol link
 
+/**
+ * 是否检测上传文件已经存在。如果已经存在，则不存在文件内容，建立一个符号链接以节省磁盘空间。
+ * 这个应用要配合FastDHT 使用，所以打开前要先安装FastDHT
+ * 1或yes 是检测，0或no 是不检测
+ */
 bool g_check_file_duplicate = false;
 byte g_file_signature_method = STORAGE_FILE_SIGNATURE_METHOD_HASH;
 char g_key_namespace[FDHT_MAX_NAMESPACE_LEN+1] = {0};

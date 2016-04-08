@@ -3055,6 +3055,7 @@ static int storage_do_set_metadata(struct fast_task_info *pTask)
 	{
 		if (meta_bytes == 0)
 		{
+			//如果文件不存在,直接返回
 			if (!fileExists(pFileContext->filename))
 			{
 				result = 0;
@@ -3062,6 +3063,7 @@ static int storage_do_set_metadata(struct fast_task_info *pTask)
 			}
 
 			pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_DELETE_FILE;
+			//删除文件
 			if (unlink(pFileContext->filename) != 0)
 			{
 				logError("file: "__FILE__", line: %d, " \
@@ -3084,26 +3086,27 @@ static int storage_do_set_metadata(struct fast_task_info *pTask)
 		{
 			break;
 		}
-
+		//文件存在则设置同步为更新
 		if (fileExists(pFileContext->filename))
 		{
 			pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_UPDATE_FILE;
 		}
+		//文件不存在，则设置同步为新建
 		else
 		{
 			pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
 		}
-
+		//存入
 		result = writeToFile(pFileContext->filename, meta_buff, meta_bytes);
 		break;
 	}
-
+	//如果需要更新文件，而设定mate为空，则直接返回
 	if (meta_bytes == 0)
 	{
 		result = 0;
 		break;
 	}
-
+	//文件不存在
 	result = getFileContent(pFileContext->filename, &file_buff, &file_bytes);
 	if (result == ENOENT)
 	{
@@ -3120,6 +3123,7 @@ static int storage_do_set_metadata(struct fast_task_info *pTask)
 		}
 
 		pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
+		//重写文件
 		result = writeToFile(pFileContext->filename, meta_buff, meta_bytes);
 		break;
 	}
@@ -3216,8 +3220,9 @@ static int storage_do_set_metadata(struct fast_task_info *pTask)
 		result = errno != 0 ? errno : ENOMEM;
 		break;
 	}
-
+	//设定同步为更新
 	pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_UPDATE_FILE;
+	//重写文件
 	result = writeToFile(pFileContext->filename, all_meta_buff, all_meta_bytes);
 
 	free(all_meta_buff);
@@ -3363,7 +3368,8 @@ static int storage_server_set_metadata(struct fast_task_info *pTask)
 
 	meta_buff = p;
 	*(meta_buff + meta_bytes) = '\0';
-
+	//获取文件的信息，主要用于获取是否是一个文件符号
+	//然而获取到这个状态并没有使用，然并卵啊
 	if ((result=trunk_file_lstat(store_path_index, true_filename, \
 			true_filename_len, &stat_buf, \
 			&(pFileContext->extra_info.upload.trunk_info), \
@@ -5300,6 +5306,7 @@ static int storage_upload_slave_file(struct fast_task_info *pTask)
 			 __LINE__, pTask->client_ip);
 		return EINVAL;
 	}
+	//后缀名检验
 	if ((result=fdfs_validate_filename(prefix_name)) != 0)
 	{
 		logError("file: "__FILE__", line: %d, " \
@@ -5312,6 +5319,7 @@ static int storage_upload_slave_file(struct fast_task_info *pTask)
 	memcpy(file_ext_name, p, FDFS_FILE_EXT_NAME_MAX_LEN);
 	*(file_ext_name + FDFS_FILE_EXT_NAME_MAX_LEN) = '\0';
 	p += FDFS_FILE_EXT_NAME_MAX_LEN;
+	//扩展名检验
 	if ((result=fdfs_validate_filename(file_ext_name)) != 0)
 	{
 		logError("file: "__FILE__", line: %d, " \
@@ -5335,7 +5343,7 @@ static int storage_upload_slave_file(struct fast_task_info *pTask)
 	{
 		return result;
 	}
-
+	//检查空间是否足够
 	if (!storage_check_reserved_space_path(g_path_space_list \
 		[store_path_index].total_mb, g_path_space_list \
 		[store_path_index].free_mb - (file_bytes / FDFS_ONE_MB), \
@@ -5354,7 +5362,7 @@ static int storage_upload_slave_file(struct fast_task_info *pTask)
 				reserved_space_str));
 		return ENOSPC;
 	}
-
+	//检查字符链接(文件是否存在)
 	if ((result=trunk_file_lstat(store_path_index, true_filename, \
 			filename_len, &stat_buf, \
 			&(pFileContext->extra_info.upload.trunk_info), \
@@ -5376,6 +5384,7 @@ static int storage_upload_slave_file(struct fast_task_info *pTask)
 	pFileContext->extra_info.upload.if_sub_path_alloced = false;
 	pFileContext->extra_info.upload.trunk_info.path. \
 				store_path_index = store_path_index;
+	//生成从文件名  文件名+后缀+扩展名
 	if ((result=fdfs_gen_slave_filename(true_filename, \
 		prefix_name, file_ext_name, filename, &filename_len)) != 0)
 	{

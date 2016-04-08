@@ -529,6 +529,8 @@ int trunk_file_stat_func_ex(const FDFSStorePaths *pStorePaths, \
 	return result;
 }
 
+//fastdfs配合fastdht有这么一种情况
+//如果文件存在，则已符号连接的方式存储。不存储实际的文件
 int trunk_file_do_lstat_func_ex(const FDFSStorePaths *pStorePaths, \
 	const int store_path_index, const char *true_filename, \
 	const int filename_len, const int stat_func, \
@@ -545,6 +547,7 @@ int trunk_file_do_lstat_func_ex(const FDFSStorePaths *pStorePaths, \
 	int result;
 
 	pTrunkInfo->file.id = 0;
+	//长度不符合，则不是trunk文件
 	if (filename_len != FDFS_TRUNK_FILENAME_LENGTH) //not trunk file
 	{
 		snprintf(full_filename, sizeof(full_filename), "%s/data/%s", \
